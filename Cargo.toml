@@ -1,0 +1,18 @@
+[package]
+name = "rustfield"
+version = "0.1.0"
+authors = ["Thomas SIMON <thomas.simon.work@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ggez = "0.5"
+nalgebra = "0.18"
+ncollide2d = "0.20"
+nphysics2d = "0.12"
+
+gfx_core = "0.9"
+gfx_device_gl = "0.16"
+imgui = "0.1.0"
+imgui-gfx-renderer = "0.1.0"
