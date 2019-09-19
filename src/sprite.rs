@@ -1,5 +1,5 @@
-use ggez::graphics::Image;
 use ggez::{graphics, Context, GameResult};
+use graphics::Image;
 pub struct AllSprite {
     pub hori: graphics::spritebatch::SpriteBatch,
     pub vert: graphics::spritebatch::SpriteBatch,
@@ -9,7 +9,7 @@ pub struct AllSprite {
 
 impl AllSprite {
     pub fn new(ctx: &mut Context) -> GameResult<AllSprite> {
-        let mut hori_img = ggez::graphics::Image::from_rgba8(
+        let mut hori_img = Image::from_rgba8(
             ctx,
             3,
             3,
@@ -23,7 +23,7 @@ impl AllSprite {
 
         let hori = graphics::spritebatch::SpriteBatch::new(hori_img);
 
-        let mut vert_img = ggez::graphics::Image::from_rgba8(
+        let mut vert_img = Image::from_rgba8(
             ctx,
             3,
             3,
@@ -34,7 +34,7 @@ impl AllSprite {
         )?;
         vert_img.set_filter(ggez::graphics::FilterMode::Nearest);
         let vert = graphics::spritebatch::SpriteBatch::new(vert_img);
-        let mut diag_img_ne = ggez::graphics::Image::from_rgba8(
+        let mut diag_img_ne = Image::from_rgba8(
             ctx,
             3,
             3,
@@ -46,7 +46,7 @@ impl AllSprite {
         diag_img_ne.set_filter(ggez::graphics::FilterMode::Nearest);
         let diag_ne = graphics::spritebatch::SpriteBatch::new(diag_img_ne);
 
-        let mut diag_img_se = ggez::graphics::Image::from_rgba8(
+        let mut diag_img_se = Image::from_rgba8(
             ctx,
             3,
             3,

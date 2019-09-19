@@ -1,5 +1,3 @@
-use crate::GRID_CELL_SIZE;
-
 pub const GRID_SIZE: usize = 100;
 pub const CELLS: usize = GRID_SIZE * GRID_SIZE;
 
@@ -98,7 +96,7 @@ where
 {
     pub fn new(initial: T) -> Field<T> {
         let mut v: Vec<T> = Vec::with_capacity(CELLS);
-        for i in 0..CELLS {
+        for _ in 0..CELLS {
             v.push(initial);
         }
 

@@ -28,24 +28,13 @@ pub struct MainState {
 impl MainState {
     pub fn new(mut ctx: &mut Context, hidpi_factor: f32) -> GameResult<MainState> {
         let imgui_wrapper = ImGuiWrapper::new(&mut ctx);
-        let mut s = MainState {
+        let s = MainState {
             hidpi_factor,
             imgui_wrapper,
             flowfield: FlowField::new(CellPos::new()),
 
             sprite: AllSprite::new(ctx)?,
         };
-
-        use std::time::{Duration, Instant};
-        let now = Instant::now();
-        {
-            let mut conti = true;
-            while (conti) {
-                conti = !s.flowfield.step();
-            }
-        }
-
-        println!("{}", now.elapsed().as_millis());
 
         graphics::set_mode(
             ctx,
@@ -61,25 +50,25 @@ impl MainState {
                 max_height: 0.0,
                 resizable: true,
             },
-        );
+        )?;
 
         Ok(s)
     }
 
-    fn ui(& mut self) -> &mut UI{
+    fn ui(&mut self) -> &mut UI {
         &mut self.imgui_wrapper.ui
     }
 
     fn compute_all(&mut self) {
         let mut conti = true;
-        while (conti) {
+        while conti {
             conti = !self.flowfield.step();
         }
     }
 }
 
 impl MainState {
-    fn half_screen(&mut self, ctx: &mut Context) -> Vector2 {
+    fn half_screen(&mut self, _ctx: &mut Context) -> Vector2 {
         let [w, h] = self.imgui_wrapper.imgui.io().display_size;
         Vector2::new(w / 2.0, h / 2.0)
     }
@@ -176,7 +165,10 @@ impl EventHandler for MainState {
         let param = graphics::DrawParam::new()
             .dest(point * self.ui().zoom_smooth + half_screen)
             .offset(na::Point2::new(0.0, 0.0))
-            .scale(na::Vector2::new(self.ui().zoom_smooth, self.ui().zoom_smooth));
+            .scale(na::Vector2::new(
+                self.ui().zoom_smooth,
+                self.ui().zoom_smooth,
+            ));
 
         //Drawing FLOWFIELD
         fn cell_pos_2_rect(cell_pos: &CellPos) -> Rect {
@@ -307,8 +299,7 @@ impl EventHandler for MainState {
         graphics::draw(ctx, &circle, param)?;
 
         // Render game ui
-        self.imgui_wrapper
-            .render(ctx, self.hidpi_factor);
+        self.imgui_wrapper.render(ctx, self.hidpi_factor);
 
         graphics::present(ctx)?;
         Ok(())
@@ -379,6 +370,7 @@ impl EventHandler for MainState {
                 w: _width,
                 h: _height,
             },
-        );
+        )
+        .unwrap();
     }
 }

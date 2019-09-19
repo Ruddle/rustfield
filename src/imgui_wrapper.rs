@@ -1,12 +1,10 @@
 use ggez::graphics;
 use ggez::Context;
 
-use crate::MainState;
 use crate::UI;
 use gfx_core::{handle::RenderTargetView, memory::Typed};
 use gfx_device_gl;
 
-use imgui::*;
 use imgui_gfx_renderer::*;
 
 use std::time::Instant;
@@ -16,7 +14,6 @@ struct MouseState {
     pos: (i32, i32),
     pressed: (bool, bool, bool),
     wheel: f32,
-
 }
 
 pub struct ImGuiWrapper {
