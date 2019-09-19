@@ -32,7 +32,6 @@ impl MainState {
             hidpi_factor,
             imgui_wrapper,
             flowfield: FlowField::new(CellPos::new()),
-
             sprite: AllSprite::new(ctx)?,
         };
 
