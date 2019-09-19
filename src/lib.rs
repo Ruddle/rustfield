@@ -21,7 +21,7 @@ pub struct MainState {
     imgui_wrapper: ImGuiWrapper,
     hidpi_factor: f32,
     flowfield: FlowField,
-    ui: UI,
+
     sprite: AllSprite,
 }
 
@@ -32,7 +32,7 @@ impl MainState {
             hidpi_factor,
             imgui_wrapper,
             flowfield: FlowField::new(CellPos::new()),
-            ui: UI::new(),
+
             sprite: AllSprite::new(ctx)?,
         };
 
@@ -63,17 +63,11 @@ impl MainState {
             },
         );
 
-        graphics::set_screen_coordinates(
-            ctx,
-            Rect {
-                x: 0.0,
-                y: 0.0,
-                w: 1600.0,
-                h: 900.0,
-            },
-        );
-
         Ok(s)
+    }
+
+    fn ui(& mut self) -> &mut UI{
+        &mut self.imgui_wrapper.ui
     }
 
     fn compute_all(&mut self) {
@@ -93,73 +87,73 @@ impl MainState {
 
 impl EventHandler for MainState {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
-        if self.ui.compute_all {
+        if self.ui().compute_all {
             self.compute_all();
         }
 
-        if self.ui.compute_live {
+        if self.ui().compute_live {
             self.flowfield.step();
         }
 
-        if self.ui.compute_step {
-            self.ui.compute_step = false;
+        if self.ui().compute_step {
+            self.ui().compute_step = false;
             self.flowfield.step();
         }
 
-        self.ui.zoom_smooth = self.ui.zoom * 0.1 + self.ui.zoom_smooth * 0.9;
-        self.ui.cam_pos_smooth = self.ui.cam_pos * 0.1 + self.ui.cam_pos_smooth * 0.9;
+        self.ui().zoom_smooth = self.ui().zoom * 0.1 + self.ui().zoom_smooth * 0.9;
+        self.ui().cam_pos_smooth = self.ui().cam_pos * 0.1 + self.ui().cam_pos_smooth * 0.9;
 
         let half_screen = self.half_screen(_ctx);
-        self.ui.mouse_pos_camera =
-            -self.ui.cam_pos_smooth + (self.ui.mouse_pos - half_screen) / self.ui.zoom_smooth;
+        self.ui().mouse_pos_camera =
+            -self.ui().cam_pos_smooth + (self.ui().mouse_pos - half_screen) / self.ui().zoom_smooth;
 
-        let shift_mult = if self.ui.keys_pressed.contains(&KeyCode::LShift) {
+        let shift_mult = if self.ui().keys_pressed.contains(&KeyCode::LShift) {
             6.0
         } else {
             2.0
         };
 
-        for key_pressed in &self.ui.keys_pressed {
+        for key_pressed in self.ui().keys_pressed.clone() {
             match key_pressed {
-                KeyCode::Z => self.ui.cam_pos += Vector2::new(0.0, 1.0) * shift_mult,
-                KeyCode::S => self.ui.cam_pos += Vector2::new(0.0, -1.0) * shift_mult,
-                KeyCode::Q => self.ui.cam_pos += Vector2::new(1.0, 0.0) * shift_mult,
-                KeyCode::D => self.ui.cam_pos += Vector2::new(-1.0, 0.0) * shift_mult,
+                KeyCode::Z => self.ui().cam_pos += Vector2::new(0.0, 1.0) * shift_mult,
+                KeyCode::S => self.ui().cam_pos += Vector2::new(0.0, -1.0) * shift_mult,
+                KeyCode::Q => self.ui().cam_pos += Vector2::new(1.0, 0.0) * shift_mult,
+                KeyCode::D => self.ui().cam_pos += Vector2::new(-1.0, 0.0) * shift_mult,
                 _ => {}
             }
         }
 
         // Cost drawing
         let cell_pos = CellPos {
-            i: ((self.ui.mouse_pos_camera.x / GRID_CELL_SIZE) as usize)
+            i: ((self.ui().mouse_pos_camera.x / GRID_CELL_SIZE) as usize)
                 .min(flowfield::GRID_SIZE - 1),
-            j: ((self.ui.mouse_pos_camera.y / GRID_CELL_SIZE) as usize)
+            j: ((self.ui().mouse_pos_camera.y / GRID_CELL_SIZE) as usize)
                 .min(flowfield::GRID_SIZE - 1),
         };
 
         let big_cell_pos = flowfield::Field::<i32>::grow(&cell_pos);
 
         if !self.imgui_wrapper.imgui.io().want_capture_mouse {
-            match self.ui.flowfield_mode {
+            match self.ui().flowfield_mode {
                 ui_impl::DisplayFlowField::Cost => {
-                    if self.ui.mouse_pressed.contains(&MouseButton::Left) {
+                    if self.ui().mouse_pressed.contains(&MouseButton::Left) {
                         for cell_pos in &big_cell_pos {
                             self.flowfield.cost.set(&cell_pos, 200);
                         }
                     }
-                    if self.ui.mouse_pressed.contains(&MouseButton::Right) {
+                    if self.ui().mouse_pressed.contains(&MouseButton::Right) {
                         for cell_pos in &big_cell_pos {
                             self.flowfield.cost.set(&cell_pos, 1);
                         }
                     }
-                    if self.ui.mouse_pressed.contains(&MouseButton::Middle) {
+                    if self.ui().mouse_pressed.contains(&MouseButton::Middle) {
                         self.flowfield.reset();
                     }
                 }
                 ui_impl::DisplayFlowField::Integration => {
-                    if self.ui.mouse_pressed.contains(&MouseButton::Left) {
+                    if self.ui().mouse_pressed.contains(&MouseButton::Left) {
                         self.flowfield.set_objective(cell_pos);
-                        if self.ui.compute_all {
+                        if self.ui().compute_all {
                             self.compute_all();
                         }
                     }
@@ -175,14 +169,14 @@ impl EventHandler for MainState {
 
         //Camera param
 
-        let point = na::Point2::from(self.ui.cam_pos_smooth);
+        let point = na::Point2::from(self.ui().cam_pos_smooth);
 
         let half_screen = self.half_screen(ctx);
 
         let param = graphics::DrawParam::new()
-            .dest(point * self.ui.zoom_smooth + half_screen)
+            .dest(point * self.ui().zoom_smooth + half_screen)
             .offset(na::Point2::new(0.0, 0.0))
-            .scale(na::Vector2::new(self.ui.zoom_smooth, self.ui.zoom_smooth));
+            .scale(na::Vector2::new(self.ui().zoom_smooth, self.ui().zoom_smooth));
 
         //Drawing FLOWFIELD
         fn cell_pos_2_rect(cell_pos: &CellPos) -> Rect {
@@ -207,7 +201,7 @@ impl EventHandler for MainState {
                             * 0.2
                 }
 
-                let v = match self.ui.flowfield_mode {
+                let v = match self.ui().flowfield_mode {
                     ui_impl::DisplayFlowField::Cost => self.flowfield.cost.get(&(i, j).into()),
                     ui_impl::DisplayFlowField::Integration => {
                         self.flowfield.integration.get(&(i, j).into())
@@ -233,12 +227,12 @@ impl EventHandler for MainState {
             ctx,
             &img,
             graphics::DrawParam::new()
-                .dest(point * self.ui.zoom_smooth + half_screen)
+                .dest(point * self.ui().zoom_smooth + half_screen)
                 //            .rotation(20.0 / 100.0)
                 .offset(na::Point2::new(0.0, 0.0))
                 .scale(na::Vector2::new(
-                    self.ui.zoom_smooth * GRID_CELL_SIZE as f32,
-                    self.ui.zoom_smooth * GRID_CELL_SIZE as f32,
+                    self.ui().zoom_smooth * GRID_CELL_SIZE as f32,
+                    self.ui().zoom_smooth * GRID_CELL_SIZE as f32,
                 )),
         )?;
 
@@ -255,7 +249,7 @@ impl EventHandler for MainState {
         }
 
         //Flow arrow
-        if self.ui.flowfield_show_arrow {
+        if self.ui().flowfield_show_arrow {
             for j in 0..flowfield::GRID_SIZE {
                 for i in 0..flowfield::GRID_SIZE {
                     let (i, j) = (i as f32, j as f32);
@@ -290,8 +284,8 @@ impl EventHandler for MainState {
         //CASE POINTED
         let color = [0.0, 1.0, 0.2, 0.5].into();
         let cell_pos = CellPos {
-            i: (self.ui.mouse_pos_camera.x / GRID_CELL_SIZE) as usize,
-            j: (self.ui.mouse_pos_camera.y / GRID_CELL_SIZE) as usize,
+            i: (self.ui().mouse_pos_camera.x / GRID_CELL_SIZE) as usize,
+            j: (self.ui().mouse_pos_camera.y / GRID_CELL_SIZE) as usize,
         };
         let rectangle = graphics::Mesh::new_rectangle(
             ctx,
@@ -305,7 +299,7 @@ impl EventHandler for MainState {
         let circle = graphics::Mesh::new_circle(
             ctx,
             graphics::DrawMode::fill(),
-            na::Point2::from(self.ui.mouse_pos_camera),
+            na::Point2::from(self.ui().mouse_pos_camera),
             2.0,
             0.05,
             graphics::BLACK,
@@ -314,7 +308,7 @@ impl EventHandler for MainState {
 
         // Render game ui
         self.imgui_wrapper
-            .render(ctx, self.hidpi_factor, &mut self.ui);
+            .render(ctx, self.hidpi_factor);
 
         graphics::present(ctx)?;
         Ok(())
@@ -333,7 +327,7 @@ impl EventHandler for MainState {
             button == MouseButton::Middle,
         ));
 
-        self.ui.mouse_pressed.insert(button);
+        self.ui().mouse_pressed.insert(button);
     }
 
     fn mouse_button_up_event(
@@ -344,17 +338,17 @@ impl EventHandler for MainState {
         _y: f32,
     ) {
         self.imgui_wrapper.update_mouse_down((false, false, false));
-        self.ui.mouse_pressed.remove(&_button);
+        self.ui().mouse_pressed.remove(&_button);
     }
 
     fn mouse_motion_event(&mut self, _ctx: &mut Context, x: f32, y: f32, _dx: f32, _dy: f32) {
         self.imgui_wrapper.update_mouse_pos(x, y);
 
-        self.ui.mouse_pos = Vector2::new(x, y);
+        self.ui().mouse_pos = Vector2::new(x, y);
     }
 
     fn mouse_wheel_event(&mut self, _ctx: &mut Context, _x: f32, _y: f32) {
-        self.ui.zoom = f32::max(0.1, self.ui.zoom * (1.0 + _y / 10.0))
+        self.ui().zoom = f32::max(0.1, self.ui().zoom * (1.0 + _y / 10.0))
     }
 
     fn key_down_event(
@@ -369,11 +363,11 @@ impl EventHandler for MainState {
             _ => (),
         }
 
-        self.ui.keys_pressed.insert(keycode);
+        self.ui().keys_pressed.insert(keycode);
     }
 
     fn key_up_event(&mut self, _ctx: &mut Context, _keycode: KeyCode, _keymods: KeyMods) {
-        self.ui.keys_pressed.remove(&_keycode);
+        self.ui().keys_pressed.remove(&_keycode);
     }
 
     fn resize_event(&mut self, _ctx: &mut Context, _width: f32, _height: f32) {

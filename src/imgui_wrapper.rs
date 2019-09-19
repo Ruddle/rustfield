@@ -16,6 +16,7 @@ struct MouseState {
     pos: (i32, i32),
     pressed: (bool, bool, bool),
     wheel: f32,
+
 }
 
 pub struct ImGuiWrapper {
@@ -23,6 +24,7 @@ pub struct ImGuiWrapper {
     pub renderer: Renderer<gfx_core::format::Rgba8, gfx_device_gl::Resources>,
     last_frame: Instant,
     mouse_state: MouseState,
+    pub ui: UI,
 }
 
 impl ImGuiWrapper {
@@ -58,10 +60,11 @@ impl ImGuiWrapper {
             renderer,
             last_frame: Instant::now(),
             mouse_state: MouseState::default(),
+            ui: UI::new(),
         }
     }
 
-    pub fn render(&mut self, ctx: &mut Context, hidpi_factor: f32, ui_impl: &mut UI) {
+    pub fn render(&mut self, ctx: &mut Context, hidpi_factor: f32) {
         // Update mouse
         self.update_mouse();
 
@@ -76,10 +79,10 @@ impl ImGuiWrapper {
         self.imgui.io_mut().display_framebuffer_scale = [hidpi_factor, hidpi_factor];
         self.imgui.io_mut().delta_time = delta_s;
 
-        let ui = self.imgui.frame();
-        ui_impl.draw(&ui);
+        let frame_ui = self.imgui.frame();
+        self.ui.draw(&frame_ui);
         // Render
-        let draw_data = ui.render();
+        let draw_data = frame_ui.render();
         let (factory, _, encoder, _, render_target) = graphics::gfx_objects(ctx);
         self.renderer
             .render(
