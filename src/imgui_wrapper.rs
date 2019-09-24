@@ -1,7 +1,7 @@
 use ggez::graphics;
 use ggez::Context;
 
-use crate::UI;
+use crate::HighLevelUI;
 use gfx_core::{handle::RenderTargetView, memory::Typed};
 use gfx_device_gl;
 
@@ -21,7 +21,7 @@ pub struct ImGuiWrapper {
     pub renderer: Renderer<gfx_core::format::Rgba8, gfx_device_gl::Resources>,
     last_frame: Instant,
     mouse_state: MouseState,
-    pub ui: UI,
+    pub ui: HighLevelUI,
 }
 
 impl ImGuiWrapper {
@@ -57,7 +57,7 @@ impl ImGuiWrapper {
             renderer,
             last_frame: Instant::now(),
             mouse_state: MouseState::default(),
-            ui: UI::new(),
+            ui: HighLevelUI::new(),
         }
     }
 
