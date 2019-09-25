@@ -75,6 +75,12 @@ impl Debug for Field<u8> {
     }
 }
 
+impl Debug for Field<bool> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Field of bool")
+    }
+}
+
 pub fn neighbors_with_distance(
     position: &CellPos,
     width: usize,
@@ -186,10 +192,13 @@ where
 {
     pub fn new(initial: T, width: usize, height: usize) -> Field<T> {
         let total = width * height;
-        let mut v: Vec<T> = Vec::with_capacity(total);
-        for _ in 0..total {
-            v.push(initial);
-        }
+
+        let mut v = vec![initial; total];
+
+        //        let mut v: Vec<T> = Vec::with_capacity(total);
+        //        for _ in 0..total {
+        //            v.push(initial);
+        //        }
 
         Field {
             arr: v,

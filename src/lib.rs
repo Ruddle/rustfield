@@ -346,7 +346,7 @@ impl MainState {
             },
         )?;
 
-        for _ in 0..20 {
+        for _ in 0..50 {
             s.path_computer.astars.push(PathComputer::astar(
                 CellPos::new(),
                 CellPos {
@@ -434,9 +434,9 @@ impl MainState {
                             &mut color_vec,
                         )
                     }
-                    for node in closed_nodes {
-                        color_pixel(&node, &[1.0, 0.0, 0.0, 0.2], self.map.size, &mut color_vec)
-                    }
+                    //                    for node in closed_nodes {
+                    //                        color_pixel(&node, &[1.0, 0.0, 0.0, 0.2], self.map.size, &mut color_vec)
+                    //                    }
                     for min in open_nodes.iter().map(|x| x.1).min_by_key(|x| x.f()) {
                         color_pixel(
                             &min.cell_pos,

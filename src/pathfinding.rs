@@ -42,7 +42,7 @@ pub enum AStarCompute {
         cost: Field<u8>,
         sort_cost: u128,
         open_nodes: HashMap<CellPos, AStarNode>,
-        closed_nodes: HashSet<CellPos>,
+        closed_nodes: Field<bool>,
     },
     Computed {
         from: CellPos,
@@ -105,7 +105,10 @@ impl AStarCompute {
     pub fn step(self) -> Self {
         match self {
             AStarCompute::InitialData { from, to, cost } => {
-                let mut open_nodes = HashMap::new();
+                let capacity = (from.distance(&to) / (10 / 2)) as usize;
+                let mut open_nodes = HashMap::with_capacity(capacity);
+
+                let (w, h) = (cost.width, cost.height);
 
                 open_nodes.insert(
                     from,
@@ -122,7 +125,7 @@ impl AStarCompute {
                     cost,
                     sort_cost: 0,
                     open_nodes,
-                    closed_nodes: HashSet::new(),
+                    closed_nodes: Field::<bool>::new(false, w, h),
                 }
             }
             AStarCompute::Computing {
@@ -153,7 +156,7 @@ impl AStarCompute {
                     AStarCompute::Computed { from, to, path }
                 } else {
                     open_nodes.remove(&min_node.cell_pos);
-                    closed_nodes.insert(min_node.cell_pos);
+                    closed_nodes.set(&min_node.cell_pos, true);
                     let neighbors = crate::field::neighbors_with_distance_iter(
                         &min_node.cell_pos,
                         cost.width,
@@ -161,7 +164,7 @@ impl AStarCompute {
                     );
 
                     for (neighbor_pos, neighbor_dist) in neighbors {
-                        if !closed_nodes.contains(&neighbor_pos) {
+                        if !closed_nodes.get(&neighbor_pos) {
                             AStarCompute::neighbor_replace_push_in_open(
                                 &neighbor_pos,
                                 neighbor_dist,
