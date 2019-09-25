@@ -426,7 +426,7 @@ impl MainState {
                 } => {
                     color_pixel(from, &[0.0, 1.0, 0.0, 1.0], self.map.size, &mut color_vec);
                     color_pixel(to, &[1.0, 1.0, 0.0, 1.0], self.map.size, &mut color_vec);
-                    for node in open_nodes {
+                    for (_, node) in open_nodes {
                         color_pixel(
                             &node.cell_pos,
                             &[0.5, 0.5, 0.5, 0.2],
@@ -437,7 +437,7 @@ impl MainState {
                     for node in closed_nodes {
                         color_pixel(&node, &[1.0, 0.0, 0.0, 0.2], self.map.size, &mut color_vec)
                     }
-                    for min in open_nodes.iter().min_by_key(|x| x.f()) {
+                    for min in open_nodes.iter().map(|x| x.1).min_by_key(|x| x.f()) {
                         color_pixel(
                             &min.cell_pos,
                             &[1.0, 0.0, 1.0, 1.0],

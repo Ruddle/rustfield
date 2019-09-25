@@ -41,7 +41,7 @@ pub enum AStarCompute {
         to: CellPos,
         cost: Field<u8>,
         sort_cost: u128,
-        open_nodes: Vec<AStarNode>,
+        open_nodes: HashMap<CellPos, AStarNode>,
         closed_nodes: HashSet<CellPos>,
     },
     Computed {
@@ -71,29 +71,23 @@ impl AStarCompute {
         neighbor_pos: &CellPos,
         neighbor_dist: i8,
         min_node: &AStarNode,
-        open_nodes: &mut Vec<AStarNode>,
+        open_nodes: &mut HashMap<CellPos, AStarNode>,
         cost: &Field<u8>,
         to: &CellPos,
     ) {
         let g = min_node.g + (neighbor_dist as i32 * cost.get(neighbor_pos) as i32);
         let h = to.distance(neighbor_pos);
 
-        let index = open_nodes
-            .iter()
-            .enumerate()
-            .find(|x| x.1.cell_pos == *neighbor_pos)
-            .map(|x| x.0);
-
-        match index {
-            Some(index) => {
-                if AStarNode::f_static(g, h) < open_nodes[index].f() {
+        match open_nodes.get(neighbor_pos) {
+            Some(existing) => {
+                if AStarNode::f_static(g, h) < existing.f() {
                     let node_to_evaluate = AStarNode {
                         cell_pos: neighbor_pos.clone(),
                         g,
                         h,
                         parent: Some(Box::new(min_node.clone())),
                     };
-                    std::mem::replace(&mut open_nodes[index], node_to_evaluate);
+                    open_nodes.insert(neighbor_pos.clone(), node_to_evaluate);
                 }
             }
             None => {
@@ -103,26 +97,34 @@ impl AStarCompute {
                     h,
                     parent: Some(Box::new(min_node.clone())),
                 };
-                open_nodes.push(node_to_evaluate);
+                open_nodes.insert(neighbor_pos.clone(), node_to_evaluate);
             }
         }
     }
 
     pub fn step(self) -> Self {
         match self {
-            AStarCompute::InitialData { from, to, cost } => AStarCompute::Computing {
-                from,
-                to,
-                cost,
-                sort_cost: 0,
-                open_nodes: vec![AStarNode {
-                    cell_pos: from,
-                    g: 0,
-                    h: from.distance(&to),
-                    parent: None,
-                }],
-                closed_nodes: HashSet::new(),
-            },
+            AStarCompute::InitialData { from, to, cost } => {
+                let mut open_nodes = HashMap::new();
+
+                open_nodes.insert(
+                    from,
+                    AStarNode {
+                        cell_pos: from,
+                        g: 0,
+                        h: from.distance(&to),
+                        parent: None,
+                    },
+                );
+                AStarCompute::Computing {
+                    from,
+                    to,
+                    cost,
+                    sort_cost: 0,
+                    open_nodes,
+                    closed_nodes: HashSet::new(),
+                }
+            }
             AStarCompute::Computing {
                 from,
                 to,
@@ -133,14 +135,12 @@ impl AStarCompute {
             } => {
                 //                let start = std::time::Instant::now();
 
-                let mut min_node = open_nodes[0].clone();
-                let mut min_f = open_nodes[0].f();
-                let mut min_index = 0;
-                for (index, node) in open_nodes.iter().enumerate() {
+                let mut min_node = open_nodes.values().next().unwrap().clone();
+                let mut min_f = min_node.f();
+                for (_, node) in open_nodes.iter() {
                     let f = node.f();
                     if f < min_f {
                         min_f = f;
-                        min_index = index;
                         min_node = (*node).clone();
                     }
                 }
@@ -152,7 +152,7 @@ impl AStarCompute {
                     AStarCompute::append_parent(&min_node, &mut path);
                     AStarCompute::Computed { from, to, path }
                 } else {
-                    open_nodes.remove(min_index);
+                    open_nodes.remove(&min_node.cell_pos);
                     closed_nodes.insert(min_node.cell_pos);
                     let neighbors = crate::field::neighbors_with_distance_iter(
                         &min_node.cell_pos,
