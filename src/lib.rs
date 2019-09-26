@@ -3,6 +3,7 @@ use ggez::event::{EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::{self, Rect};
 use ggez::nalgebra as na;
 use ggez::{Context, GameResult};
+mod agent;
 mod astar;
 mod field;
 mod flowfield;
@@ -11,8 +12,8 @@ mod map;
 mod misc;
 mod pathfinding;
 mod sprite;
-
 mod ui_impl;
+use crate::agent::Agent;
 use crate::astar::AStarCompute;
 use crate::field::{CellPos, Field};
 use crate::flowfield::{FlowField, FlowFieldState, GRID_SIZE};
@@ -20,6 +21,7 @@ use crate::map::Map;
 use crate::misc::Vector2;
 use crate::pathfinding::{FullPathCompute, PathComputer, Zone};
 use imgui_wrapper::ImGuiWrapper;
+use rand::Rng;
 use sprite::AllSprite;
 use std::collections::HashSet;
 use ui_impl::HighLevelUI;
@@ -34,10 +36,71 @@ pub struct MainState {
     sprite: AllSprite,
     path_computer: PathComputer,
     start: CellPos,
+    agents: Vec<Agent>,
 }
 
 impl EventHandler for MainState {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
+        if self.ui().set_demo {
+            self.ui_mut().set_demo = false;
+            use rand::{Rng, SeedableRng};
+
+            let mut rng: rand::prelude::StdRng = SeedableRng::seed_from_u64(0);
+
+            let mut field = Field::<f64>::new(0.0, MAP_SIZE, MAP_SIZE);
+
+            //Put random
+            for i in field.arr.iter_mut() {
+                let v: f64 = rng.gen_range(0.0, 1.0);
+                let v = if v < 0.97 { 0.0 } else { 1.0 };
+                *i = v;
+            }
+
+            //Smooth
+            for _ in 0..3 {
+                for i in 1..MAP_SIZE - 1 {
+                    for j in 1..MAP_SIZE - 1 {
+                        let mut acc = 0.0;
+                        for di in -1..=1 {
+                            for dj in -1..=1 {
+                                let ni: usize = (di + i as i32) as usize;
+                                let nj: usize = (dj + j as i32) as usize;
+                                acc += field.arr[ni + nj * MAP_SIZE]
+                            }
+                        }
+                        field.arr[i + j * MAP_SIZE] = acc / 9.0;
+                    }
+                }
+            }
+
+            //            for i in field.arr.iter_mut() {
+            //                *i = i.powf(2.0);
+            //            }
+
+            for (i, v) in self.map.cost.arr.iter_mut().zip(field.arr) {
+                *i = (v * 255.0).min(255.0).max(1.0) as u8;
+            }
+        }
+
+        for agent in &mut self.agents {
+            agent.step();
+        }
+
+        for pathfinding in self
+            .path_computer
+            .full_paths
+            .iter()
+            .filter_map(|p| match p {
+                FullPathCompute::FlowFieldComputed(r) => Some(r),
+                _ => None,
+            })
+            .next()
+        {
+            for agent in &mut self.agents {
+                agent.follow(pathfinding);
+            }
+        }
+
         let bools: Vec<bool> = self.ui().full_pathfinding.iter().map(|x| x.0).collect();
 
         for (index, to_delete) in bools.iter().enumerate() {
@@ -83,6 +146,14 @@ impl EventHandler for MainState {
             2.0
         };
 
+        // Cost drawing
+        let cell_pos = CellPos {
+            i: ((self.ui_mut().mouse_pos_camera.x / GRID_CELL_SIZE) as usize)
+                .min(self.map.size - 1),
+            j: ((self.ui_mut().mouse_pos_camera.y / GRID_CELL_SIZE) as usize)
+                .min(self.map.size - 1),
+        };
+
         for key_pressed in self.ui_mut().keys_pressed.clone() {
             match key_pressed {
                 KeyCode::Z => {
@@ -97,26 +168,35 @@ impl EventHandler for MainState {
                 KeyCode::D => {
                     self.ui_mut().cam_pos += Vector2::new(-1.0, 0.0) * shift_mult * zoom_move_mult
                 }
+                KeyCode::Space => {}
                 _ => {}
             }
         }
 
-        // Cost drawing
-        let cell_pos = CellPos {
-            i: ((self.ui_mut().mouse_pos_camera.x / GRID_CELL_SIZE) as usize)
-                .min(self.map.size - 1),
-            j: ((self.ui_mut().mouse_pos_camera.y / GRID_CELL_SIZE) as usize)
-                .min(self.map.size - 1),
-        };
-
         let big_cell_pos = self.map.cost.grow(&cell_pos);
 
-        let mouse_triggered_or_pressed = self.ui().mouse_pressed_or_triggered();
+        let mouse_triggered_or_pressed = self.ui().get_mouse_pressed_or_triggered();
 
         let mouse_triggered: HashSet<MouseButton> =
-            self.ui().mouse_trigger.iter().copied().collect();
+            self.ui().mouse_triggered.iter().copied().collect();
 
         if !self.imgui_wrapper.imgui.io().want_capture_mouse {
+            if self.ui().keys_triggered.contains(&KeyCode::Space) {
+                let mut rng = rand::prelude::thread_rng();
+                for _ in 0..250 {
+                    let x: f32 = rng.gen_range(-GRID_CELL_SIZE * 10.0, GRID_CELL_SIZE * 10.0);
+                    let y: f32 = rng.gen_range(-GRID_CELL_SIZE * 10.0, GRID_CELL_SIZE * 10.0);
+
+                    self.agents.push(Agent::new(Vector2::new(
+                        cell_pos.i as f32 * GRID_CELL_SIZE + x,
+                        cell_pos.j as f32 * GRID_CELL_SIZE + y,
+                    )));
+                }
+            }
+            if self.ui().keys_triggered.contains(&KeyCode::Delete) {
+                self.agents.clear();
+            }
+
             match self.ui().cursor_control {
                 ui_impl::CursorControl::CostDrawing => {
                     if mouse_triggered_or_pressed.contains(&MouseButton::Left) {
@@ -206,6 +286,16 @@ impl EventHandler for MainState {
         )?;
         graphics::draw(ctx, &rectangle, param)?;
 
+        //AGENTS
+        for agent in &self.agents {
+            let p = graphics::DrawParam::new()
+                .dest(na::Point2::new(agent.pos.x - 2.0, agent.pos.y - 2.0));
+            self.sprite.agent.add(p);
+        }
+
+        graphics::draw(ctx, &self.sprite.agent, param)?;
+        self.sprite.agent.clear();
+
         //POINTER
         let circle = graphics::Mesh::new_circle(
             ctx,
@@ -237,8 +327,7 @@ impl EventHandler for MainState {
             button == MouseButton::Middle,
         ));
 
-        self.ui_mut().mouse_pressed.insert(button);
-        self.ui_mut().mouse_trigger.insert(button);
+        self.ui_mut().mouse_trigger(button);
     }
 
     fn mouse_button_up_event(
@@ -274,7 +363,7 @@ impl EventHandler for MainState {
             _ => (),
         }
 
-        self.ui_mut().keys_pressed.insert(keycode);
+        self.ui_mut().key_trigger(keycode);
     }
 
     fn key_up_event(&mut self, _ctx: &mut Context, _keycode: KeyCode, _keymods: KeyMods) {
@@ -316,6 +405,7 @@ impl MainState {
             sprite: AllSprite::new(ctx)?,
             path_computer: PathComputer::new(),
             start: CellPos::new(),
+            agents: Vec::new(),
         };
 
         graphics::set_mode(
@@ -543,7 +633,7 @@ impl MainState {
                         }
                     }
                 }
-                FullPathCompute::FlowFieldComputed { flowfields } => {
+                FullPathCompute::FlowFieldComputed(pathfinding::Result { flowfields }) => {
                     let min = flowfields
                         .iter()
                         .map(|c| c.1.integration.arr.iter().min().unwrap().clone())

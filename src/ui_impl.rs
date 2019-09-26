@@ -21,12 +21,14 @@ pub struct HighLevelUI {
     pub flowfield_show_arrow: bool,
     pub compute_live: bool,
     pub compute_step: bool,
+    pub set_demo: bool,
     pub step_per_frame: i32,
     pub compute_all: bool,
     pub mouse_pos: Vector2,
     pub keys_pressed: HashSet<KeyCode>,
+    pub keys_triggered: HashSet<KeyCode>,
     pub mouse_pressed: HashSet<MouseButton>,
-    pub mouse_trigger: HashSet<MouseButton>,
+    pub mouse_triggered: HashSet<MouseButton>,
     pub zoom: f32,
     pub zoom_smooth: f32,
     pub cam_pos: Vector2,
@@ -46,12 +48,14 @@ impl HighLevelUI {
             flowfield_show_arrow: false,
             compute_live: true,
             compute_step: false,
+            set_demo: false,
             step_per_frame: 2,
             compute_all: true,
             mouse_pos: Vector2::new(0.0, 0.0),
             keys_pressed: HashSet::new(),
+            keys_triggered: HashSet::new(),
             mouse_pressed: HashSet::new(),
-            mouse_trigger: HashSet::new(),
+            mouse_triggered: HashSet::new(),
             zoom: 1.0,
             zoom_smooth: 1.0,
             cam_pos: Vector2::new(-250.0, -400.0),
@@ -63,14 +67,25 @@ impl HighLevelUI {
         }
     }
 
-    pub fn mouse_pressed_or_triggered(&self) -> HashSet<MouseButton> {
+    pub fn mouse_trigger(&mut self, mb: MouseButton) {
+        self.mouse_triggered.insert(mb);
+        self.mouse_pressed.insert(mb);
+    }
+
+    pub fn key_trigger(&mut self, mb: KeyCode) {
+        self.keys_pressed.insert(mb);
+        self.keys_triggered.insert(mb);
+    }
+
+    pub fn get_mouse_pressed_or_triggered(&self) -> HashSet<MouseButton> {
         self.mouse_pressed
-            .union(&self.mouse_trigger)
+            .union(&self.mouse_triggered)
             .copied()
             .collect()
     }
     pub fn reset_trigger(&mut self) {
-        self.mouse_trigger = HashSet::new();
+        self.mouse_triggered.clear();
+        self.keys_triggered.clear();
     }
 
     pub fn draw(&mut self, ui: &imgui::Ui) {
@@ -79,8 +94,14 @@ impl HighLevelUI {
             Window::new(im_str!("Rust field"))
             .size([300.0, 400.0], imgui::Condition::FirstUseEver)
             .build(ui, || {
+                                ui.text(im_str!("Try the "));
+                                ui.same_line(0.0);
+                                if ui.small_button(im_str!("Demo")) {
+                                    self.set_demo=  true;
+                                };
                                 ui.text(im_str!("Draw a maze"));
                                 ui.text(im_str!("Then check the 'Trip setting'"));
+
                                 ui.separator();
 
                                 ui.text(im_str!("Control: "));
@@ -100,14 +121,11 @@ impl HighLevelUI {
                                         ui.bullet_text(im_str!("Middle click : Reset path"));
                                     }
                                 }
-
                                 ui.bullet_text(im_str!("ZQSD : Pan camera"));
                                 ui.bullet_text(im_str!("Scroll : Zoom camera"));
-
-
+                                ui.bullet_text(im_str!("Space : Spawn 250 agents"));
+                                ui.bullet_text(im_str!("Delete : Mass Murder"));
                                 ui.separator();
-
-
                                 ui.text(im_str!("Display: "));
                                 if ui.checkbox(im_str!("Show flow arrows"), &mut self.flowfield_show_arrow) {
                                     println!("check changed");

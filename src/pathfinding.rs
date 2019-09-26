@@ -28,6 +28,14 @@ pub struct Zone {
 }
 
 impl Zone {
+    pub fn from(x: f32, y: f32) -> Zone {
+        Zone {
+            zx: x as usize / GRID_SIZE_MINUS,
+
+            zy: y as usize / GRID_SIZE_MINUS,
+        }
+    }
+
     pub fn min_i(&self) -> usize {
         self.zx * GRID_SIZE_MINUS
     }
@@ -42,6 +50,10 @@ impl Zone {
     }
 }
 
+pub struct Result {
+    pub flowfields: Vec<(Zone, FlowField)>,
+}
+
 pub enum FullPathCompute {
     Astar(AStarCompute),
     AstarDoneFieldFinding {
@@ -53,9 +65,7 @@ pub enum FullPathCompute {
         computing: (Zone, FlowField),
         computed: Vec<(Zone, FlowField)>,
     },
-    FlowFieldComputed {
-        flowfields: Vec<(Zone, FlowField)>,
-    },
+    FlowFieldComputed(Result),
 }
 
 impl FullPathCompute {
@@ -150,9 +160,9 @@ impl FullPathCompute {
                     FlowFieldState::Ready => {
                         computed.push(computing);
                         if zone_to_visit.is_empty() {
-                            FullPathCompute::FlowFieldComputed {
+                            FullPathCompute::FlowFieldComputed(Result {
                                 flowfields: computed,
-                            }
+                            })
                         } else {
                             let next_zone = zone_to_visit.pop().unwrap();
                             let cost = FullPathCompute::zone_global_cost_to_local_cost(
