@@ -30,14 +30,24 @@ impl Agent {
         let current_zone =
             pathfinding::Zone::from(self.pos.x / GRID_CELL_SIZE, self.pos.y / GRID_CELL_SIZE);
 
-        if let Some((_, flowfield)) = path.flowfields.iter().find(|(z, f)| z == &current_zone) {
-            let v = flowfield.flow.get(
-                &(
-                    (self.pos.x / GRID_CELL_SIZE) as usize - current_zone.min_i(),
-                    (self.pos.y / GRID_CELL_SIZE) as usize - current_zone.min_j(),
-                )
-                    .into(),
-            );
+        let cell_pos: CellPos = (
+            (self.pos.x / GRID_CELL_SIZE) as usize - current_zone.min_i(),
+            (self.pos.y / GRID_CELL_SIZE) as usize - current_zone.min_j(),
+        )
+            .into();
+
+        let flow_to_use = path
+            .flowfields
+            .iter()
+            .filter_map(|(z, f)| if z == &current_zone { Some(f) } else { None })
+            .min_by(|f, f2| {
+                f.integration
+                    .get(&cell_pos)
+                    .cmp(&f2.integration.get(&cell_pos))
+            });
+
+        if let Some(flowfield) = flow_to_use {
+            let v = flowfield.flow.get(&cell_pos);
             let x = (v % 3) - 1;
             let y = (v / 3) - 1;
 
