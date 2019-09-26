@@ -1,3 +1,4 @@
+use crate::astar::NodeState;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
@@ -64,7 +65,7 @@ impl From<(f32, f32)> for CellPos {
 
 #[derive(Clone)]
 pub struct Field<T: Debug> {
-    arr: Vec<T>,
+    pub arr: Vec<T>,
     pub width: usize,
     pub height: usize,
 }
@@ -78,6 +79,12 @@ impl Debug for Field<u8> {
 impl Debug for Field<bool> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Field of bool")
+    }
+}
+
+impl Debug for Field<NodeState> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Field of NodeState")
     }
 }
 
@@ -188,7 +195,7 @@ impl<T: Debug> Field<T> {
 
 impl<T> Field<T>
 where
-    T: std::marker::Copy + Ord + Debug,
+    T: std::marker::Copy + Debug,
 {
     pub fn new(initial: T, width: usize, height: usize) -> Field<T> {
         let total = width * height;
@@ -205,14 +212,6 @@ where
             width,
             height,
         }
-    }
-
-    pub fn max(&self) -> T {
-        self.arr.iter().max().unwrap().clone()
-    }
-
-    pub fn min(&self) -> T {
-        self.arr.iter().min().unwrap().clone()
     }
 
     fn index_of(&self, cell_pos: &CellPos) -> usize {

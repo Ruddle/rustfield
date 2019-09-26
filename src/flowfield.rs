@@ -1,9 +1,10 @@
 use crate::field::{CellPos, Field};
 use std::collections::HashSet;
 
-pub const MAX_INTEGRATION: usize = GRID_SIZE * 10 * 10;
+pub const MAX_INTEGRATION: usize = GRID_SIZE * 10 * 10 * 10;
 
 pub const GRID_SIZE: usize = 32;
+pub const GRID_SIZE_MINUS: usize = GRID_SIZE - 1;
 pub const CELLS: usize = GRID_SIZE * GRID_SIZE;
 
 #[derive(PartialEq)]
@@ -17,7 +18,7 @@ pub struct FlowField {
     pub cost: Field<u8>,
     pub integration: Field<i32>,
     pub flow: Field<i8>,
-    objective: CellPos,
+    pub objective: CellPos,
     pub to_visit: Vec<CellPos>,
     pub state: FlowFieldState,
 }
@@ -72,25 +73,27 @@ impl FlowField {
     fn step_flow(&mut self) {
         for i in 0..GRID_SIZE as i32 {
             for j in 0..GRID_SIZE as i32 {
-                let mut lowest = self.integration.get(&(i, j).into());
-                let mut dir = 4;
-                for di in -1..=1 {
-                    for dj in -1..=1 {
-                        if !(di == 0 && dj == 0)
-                            && i + di >= 0
-                            && j + dj >= 0
-                            && i + di < GRID_SIZE as i32
-                            && j + dj < GRID_SIZE as i32
-                        {
-                            let current = self.integration.get(&(i + di, j + dj).into());
-                            if current < lowest {
-                                lowest = current;
-                                dir = di + 1 + (dj + 1) * 3;
+                if self.flow.get(&(i, j).into()) == 4 {
+                    let mut lowest = self.integration.get(&(i, j).into());
+                    let mut dir = 4;
+                    for di in -1..=1 {
+                        for dj in -1..=1 {
+                            if !(di == 0 && dj == 0)
+                                && i + di >= 0
+                                && j + dj >= 0
+                                && i + di < GRID_SIZE as i32
+                                && j + dj < GRID_SIZE as i32
+                            {
+                                let current = self.integration.get(&(i + di, j + dj).into());
+                                if current < lowest {
+                                    lowest = current;
+                                    dir = di + 1 + (dj + 1) * 3;
+                                }
                             }
                         }
                     }
+                    self.flow.set(&(i, j).into(), dir as i8);
                 }
-                self.flow.set(&(i, j).into(), dir as i8);
             }
         }
     }

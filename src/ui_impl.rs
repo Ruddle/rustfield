@@ -21,6 +21,7 @@ pub struct HighLevelUI {
     pub flowfield_show_arrow: bool,
     pub compute_live: bool,
     pub compute_step: bool,
+    pub step_per_frame: i32,
     pub compute_all: bool,
     pub mouse_pos: Vector2,
     pub keys_pressed: HashSet<KeyCode>,
@@ -32,8 +33,9 @@ pub struct HighLevelUI {
     pub cam_pos_smooth: Vector2,
     pub mouse_pos_camera: Vector2,
     pub last_compute_ms: u128,
+    pub auto_delete: bool,
 
-    pub astars: Vec<(bool, String)>,
+    pub full_pathfinding: Vec<(bool, String)>,
 }
 
 impl HighLevelUI {
@@ -42,8 +44,9 @@ impl HighLevelUI {
             cursor_control: CursorControl::CostDrawing,
             flowfield_mode: DisplayFlowField::Cost,
             flowfield_show_arrow: false,
-            compute_live: false,
+            compute_live: true,
             compute_step: false,
+            step_per_frame: 2,
             compute_all: true,
             mouse_pos: Vector2::new(0.0, 0.0),
             keys_pressed: HashSet::new(),
@@ -55,7 +58,8 @@ impl HighLevelUI {
             cam_pos_smooth: Vector2::new(0.0, 0.0),
             mouse_pos_camera: Vector2::new(0.0, 0.0),
             last_compute_ms: 0,
-            astars: Vec::new(),
+            auto_delete: true,
+            full_pathfinding: Vec::new(),
         }
     }
 
@@ -76,30 +80,9 @@ impl HighLevelUI {
                 .size([300.0, 400.0], imgui::Condition::FirstUseEver)
                 .position([400.0, 100.0], imgui::Condition::FirstUseEver)
                 .build(|| {
-                    match self.flowfield_mode{
-                        DisplayFlowField::Cost => {
-                            ui.text(im_str!("Draw a maze"));
-                            ui.text(im_str!("Then check the 'integration' display"));
-                        }
-                        DisplayFlowField::Integration => {
-                            ui.text(im_str!("Set a destination"));
-                            ui.text(im_str!("Play with the settings below"));
-                        }
-                    }
-
+                    ui.text(im_str!("Draw a maze"));
+                    ui.text(im_str!("Then check the 'Trip setting'"));
                     ui.separator();
-                    ui.text(im_str!("Camera control: ZSQD/Scroll"));
-                    ui.separator();
-                    ui.text(im_str!(
-                        "Mouse Position: ({:.1},{:.1})",
-                        self.mouse_pos_camera.x,
-                        self.mouse_pos_camera.y
-                    ));
-                    ui.separator();
-
-                    ui.text(im_str!("Display: "));
-                    ui.radio_button(im_str!("Cost field"),&mut self.flowfield_mode,DisplayFlowField::Cost);
-                    ui.radio_button(im_str!("Integration field"),&mut self.flowfield_mode,DisplayFlowField::Integration);
 
                     ui.text(im_str!("Control: "));
                     ui.radio_button(im_str!("Cost drawing"),&mut self.cursor_control,CursorControl::CostDrawing);
@@ -119,10 +102,14 @@ impl HighLevelUI {
                         }
                     }
 
+                    ui.bullet_text(im_str!("ZQSD : Pan camera"));
+                    ui.bullet_text(im_str!("Scroll : Zoom camera"));
+
+
                     ui.separator();
 
 
-
+                    ui.text(im_str!("Display: "));
                     if ui.checkbox(im_str!("Show flow arrows"), &mut self.flowfield_show_arrow) {
                         println!("check changed");
                         println!("to {}", self.flowfield_show_arrow);
@@ -138,7 +125,10 @@ impl HighLevelUI {
                         );
                     }
 
-                    ui.checkbox(im_str!("Compute all"), &mut self.compute_all);
+                    ui.separator();
+                    ui.text(im_str!("Computations: "));
+                    ui.checkbox(im_str!("Auto delete old path"), &mut self.auto_delete);
+                    ui.checkbox(im_str!("Compute all instantly"), &mut self.compute_all);
                     ui.same_line(0.0);
                     ui.text(im_str!(
                         "/ {} ms",
@@ -150,6 +140,10 @@ impl HighLevelUI {
                         ui.checkbox(im_str!("Compute live"), &mut self.compute_live);
                     }
 
+                    if !self.compute_all  && self.compute_live{
+                        imgui::SliderInt::new(ui,im_str!("step per frame "),&mut self.step_per_frame,0,100).build();
+                    }
+
                     if !self.compute_live && !self.compute_all {
                         if ui.small_button(im_str!("Compute step")) {
                             self.compute_step = true;
@@ -157,11 +151,19 @@ impl HighLevelUI {
                     }
                     ui.separator();
 
-                    for astar in &mut self.astars {
-                        if ui.small_button(im_str!("Delete {}",astar.1).as_ref()) {
-                            astar.0 = true;
+                    ui.text(im_str!("Path list: "));
+                    for (index,e) in self.full_pathfinding.iter_mut().enumerate() {
+                        ui.text(im_str!(
+                        "path#{}",
+                        index
+                    ));
+                        ui.same_line(0.0);
+                        if ui.small_button(im_str!("Delete##{}",index).as_ref()) {
+                            e.0 = true;
                         }
                     }
+
+
 
                 });
         }

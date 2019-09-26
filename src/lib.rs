@@ -3,6 +3,7 @@ use ggez::event::{EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics::{self, Rect};
 use ggez::nalgebra as na;
 use ggez::{Context, GameResult};
+mod astar;
 mod field;
 mod flowfield;
 mod imgui_wrapper;
@@ -10,18 +11,20 @@ mod map;
 mod misc;
 mod pathfinding;
 mod sprite;
+
 mod ui_impl;
+use crate::astar::AStarCompute;
 use crate::field::{CellPos, Field};
 use crate::flowfield::{FlowField, FlowFieldState, GRID_SIZE};
 use crate::map::Map;
 use crate::misc::Vector2;
-use crate::pathfinding::{AStarCompute, PathComputer};
+use crate::pathfinding::{FullPathCompute, PathComputer, Zone};
 use imgui_wrapper::ImGuiWrapper;
 use sprite::AllSprite;
 use std::collections::HashSet;
 use ui_impl::HighLevelUI;
 
-const MAP_SIZE: usize = 300;
+const MAP_SIZE: usize = 256;
 const GRID_CELL_SIZE: f32 = 8.0;
 
 pub struct MainState {
@@ -30,70 +33,45 @@ pub struct MainState {
     map: Map,
     sprite: AllSprite,
     path_computer: PathComputer,
+    start: CellPos,
 }
 
 impl EventHandler for MainState {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
-        let bools: Vec<bool> = self.ui().astars.iter().map(|x| x.0).collect();
+        let bools: Vec<bool> = self.ui().full_pathfinding.iter().map(|x| x.0).collect();
 
         for (index, to_delete) in bools.iter().enumerate() {
             if *to_delete {
-                self.path_computer.astars.remove(index);
+                self.path_computer.full_paths.remove(index);
             }
         }
 
-        fn formatAstar(astar: &AStarCompute) -> String {
-            match astar {
-                AStarCompute::Computing {
-                    from,
-                    to,
-                    sort_cost,
-                    ..
-                } => format!(
-                    "({},{})->({},{}) cost: {}",
-                    astar.from_to().0.i,
-                    astar.from_to().0.j,
-                    astar.from_to().1.i,
-                    astar.from_to().1.j,
-                    sort_cost
-                ),
-                _ => format!(
-                    "({},{})->({},{})",
-                    astar.from_to().0.i,
-                    astar.from_to().0.j,
-                    astar.from_to().1.i,
-                    astar.from_to().1.j,
-                ),
-            }
-        }
-
-        self.ui_mut().astars = self
+        self.ui_mut().full_pathfinding = self
             .path_computer
-            .astars
+            .full_paths
             .iter()
-            .map(|astar| (false, formatAstar(astar)))
+            .map(|e| (false, format!("Pathfinding")))
             .collect();
 
-        if self.ui_mut().compute_all {
+        if self.ui().compute_all {
             self.compute_all();
         }
 
-        if self.ui_mut().compute_live {
-            for _ in 0..50 {
+        if self.ui().compute_live {
+            for _ in 0..self.ui().step_per_frame {
                 self.compute_live();
             }
         }
 
-        if self.ui_mut().compute_step {
+        if self.ui().compute_step {
             self.ui_mut().compute_step = false;
             self.compute_step();
         }
 
-        self.ui_mut().zoom_smooth = self.ui_mut().zoom * 0.1 + self.ui_mut().zoom_smooth * 0.9;
-        self.ui_mut().cam_pos_smooth =
-            self.ui_mut().cam_pos * 0.1 + self.ui_mut().cam_pos_smooth * 0.9;
+        self.ui_mut().zoom_smooth = self.ui().zoom * 0.1 + self.ui().zoom_smooth * 0.9;
+        self.ui_mut().cam_pos_smooth = self.ui().cam_pos * 0.1 + self.ui().cam_pos_smooth * 0.9;
 
-        let half_screen = self.half_screen(_ctx);
+        let half_screen = self.half_screen();
         self.ui_mut().mouse_pos_camera = -self.ui_mut().cam_pos_smooth
             + (self.ui_mut().mouse_pos - half_screen) / self.ui_mut().zoom_smooth;
 
@@ -143,7 +121,7 @@ impl EventHandler for MainState {
                 ui_impl::CursorControl::CostDrawing => {
                     if mouse_triggered_or_pressed.contains(&MouseButton::Left) {
                         for cell_pos in &big_cell_pos {
-                            self.map.cost.set(&cell_pos, 200);
+                            self.map.cost.set(&cell_pos, std::u8::MAX);
                         }
                     }
                     if mouse_triggered_or_pressed.contains(&MouseButton::Right) {
@@ -157,23 +135,22 @@ impl EventHandler for MainState {
                 }
                 ui_impl::CursorControl::TripSetting => {
                     if mouse_triggered.contains(&MouseButton::Left) {
-                        self.path_computer.astars.push(PathComputer::astar(
-                            CellPos::new(),
-                            cell_pos,
-                            self.map.cost.clone(),
-                        ));
+                        self.start = cell_pos
                     }
                     if mouse_triggered.contains(&MouseButton::Right) {
-                        //                        self.flowfield.set_objective(cell_pos);
-                        if self.ui().compute_all {
-                            self.compute_all();
+                        if self.ui().auto_delete {
+                            self.path_computer.full_paths.clear();
                         }
+
+                        self.path_computer.begin_full_path(
+                            self.start,
+                            cell_pos,
+                            self.map.cost.clone(),
+                        );
                     }
                     if mouse_triggered.contains(&MouseButton::Middle) {
-                        //                        self.flowfield.set_objective(cell_pos);
-                        if self.ui().compute_all {
-                            self.compute_all();
-                        }
+                        self.path_computer.astars.clear();
+                        self.path_computer.full_paths.clear();
                     }
                 }
             }
@@ -195,7 +172,7 @@ impl EventHandler for MainState {
 
         let point = na::Point2::from(self.ui_mut().cam_pos_smooth);
 
-        let half_screen = self.half_screen(ctx);
+        let half_screen = self.half_screen();
 
         let param = graphics::DrawParam::new()
             .dest(point * self.ui_mut().zoom_smooth + half_screen)
@@ -215,6 +192,16 @@ impl EventHandler for MainState {
             ctx,
             graphics::DrawMode::fill(),
             cell_pos_2_rect(&cell_pos),
+            color,
+        )?;
+        graphics::draw(ctx, &rectangle, param)?;
+
+        //CASE POINTED
+        let color = [1.0, 1.0, 0.2, 1.0].into();
+        let rectangle = graphics::Mesh::new_rectangle(
+            ctx,
+            graphics::DrawMode::fill(),
+            cell_pos_2_rect(&self.start),
             color,
         )?;
         graphics::draw(ctx, &rectangle, param)?;
@@ -328,6 +315,7 @@ impl MainState {
             map: Map::new(MAP_SIZE),
             sprite: AllSprite::new(ctx)?,
             path_computer: PathComputer::new(),
+            start: CellPos::new(),
         };
 
         graphics::set_mode(
@@ -346,16 +334,16 @@ impl MainState {
             },
         )?;
 
-        for _ in 0..50 {
-            s.path_computer.astars.push(PathComputer::astar(
-                CellPos::new(),
-                CellPos {
-                    i: MAP_SIZE - 1,
-                    j: MAP_SIZE / 2,
-                },
-                s.map.cost.clone(),
-            ));
-        }
+        //        for _ in 0..50 {
+        //            s.path_computer.astars.push(PathComputer::astar(
+        //                CellPos::new(),
+        //                CellPos {
+        //                    i: MAP_SIZE - 1,
+        //                    j: MAP_SIZE / 2,
+        //                },
+        //                s.map.cost.clone(),
+        //            ));
+        //        }
 
         Ok(s)
     }
@@ -380,6 +368,16 @@ impl MainState {
                 AStarCompute::step_replace(astar);
             }
         }
+
+        for full in &mut self.path_computer.full_paths {
+            while match full {
+                FullPathCompute::FlowFieldComputed { .. } => false,
+                _ => true,
+            } {
+                computed_anything = true;
+                FullPathCompute::step_replace(full);
+            }
+        }
         if computed_anything {
             self.ui_mut().last_compute_ms = start.elapsed().as_millis()
         }
@@ -393,18 +391,21 @@ impl MainState {
         for astar in &mut self.path_computer.astars {
             AStarCompute::step_replace(astar);
         }
+        for full in &mut self.path_computer.full_paths {
+            FullPathCompute::step_replace(full);
+        }
         ()
     }
 
-    fn half_screen(&mut self, _ctx: &mut Context) -> Vector2 {
+    fn half_screen(&self) -> Vector2 {
         let [w, h] = self.imgui_wrapper.imgui.io().display_size;
         Vector2::new(w / 2.0, h / 2.0)
     }
 
     fn draw_path_computer(&mut self, ctx: &mut Context) -> GameResult<()> {
-        let point = na::Point2::from(self.ui_mut().cam_pos_smooth);
+        let point = na::Point2::from(self.ui().cam_pos_smooth);
 
-        let half_screen = self.half_screen(ctx);
+        let half_screen = self.half_screen();
 
         let mut color_vec: Vec<u8> = vec![0; self.map.size * self.map.size * 4];
 
@@ -415,18 +416,18 @@ impl MainState {
             }
         }
 
-        for astar in &self.path_computer.astars {
+        for astar in self.path_computer.all_astars() {
             match astar {
                 AStarCompute::Computing {
                     from,
                     to,
                     open_nodes,
-                    closed_nodes,
+                    nodes_state,
                     ..
                 } => {
                     color_pixel(from, &[0.0, 1.0, 0.0, 1.0], self.map.size, &mut color_vec);
                     color_pixel(to, &[1.0, 1.0, 0.0, 1.0], self.map.size, &mut color_vec);
-                    for (_, node) in open_nodes {
+                    for node in open_nodes {
                         color_pixel(
                             &node.cell_pos,
                             &[0.5, 0.5, 0.5, 0.2],
@@ -437,7 +438,7 @@ impl MainState {
                     //                    for node in closed_nodes {
                     //                        color_pixel(&node, &[1.0, 0.0, 0.0, 0.2], self.map.size, &mut color_vec)
                     //                    }
-                    for min in open_nodes.iter().map(|x| x.1).min_by_key(|x| x.f()) {
+                    for min in open_nodes.iter().min_by_key(|x| x.f()) {
                         color_pixel(
                             &min.cell_pos,
                             &[1.0, 0.0, 1.0, 1.0],
@@ -447,11 +448,124 @@ impl MainState {
                     }
                 }
 
-                AStarCompute::Computed { from, to, path } => {
+                AStarCompute::Computed(astar::Result { from, to, path, .. }) => {
                     color_pixel(from, &[0.0, 1.0, 0.0, 1.0], self.map.size, &mut color_vec);
                     color_pixel(to, &[1.0, 1.0, 0.0, 1.0], self.map.size, &mut color_vec);
                     for node in path {
-                        color_pixel(&node, &[0.0, 0.0, 1.0, 0.5], self.map.size, &mut color_vec);
+                        color_pixel(node, &[0.0, 0.0, 1.0, 0.5], self.map.size, &mut color_vec);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        for full in &self.path_computer.full_paths {
+            match full {
+                FullPathCompute::ComputingFlowFields {
+                    astar,
+                    zone_to_visit,
+                    computing,
+                    computed,
+                } => {
+                    let color_to_visit = [0.5, 0.1, 0.5, 1.0];
+
+                    let mut draw_zone = |zone: &Zone, color: &[f64]| {
+                        for i in zone.min_i()..=zone.max_i().min(self.map.size - 1) {
+                            color_pixel(
+                                &(i, zone.min_j()).into(),
+                                color,
+                                self.map.size,
+                                &mut color_vec,
+                            );
+                            color_pixel(
+                                &(i, zone.max_j().min(self.map.size - 1)).into(),
+                                color,
+                                self.map.size,
+                                &mut color_vec,
+                            );
+                        }
+                        for j in zone.min_j()..=zone.max_j().min(self.map.size - 1) {
+                            color_pixel(
+                                &(zone.min_i(), j).into(),
+                                color,
+                                self.map.size,
+                                &mut color_vec,
+                            );
+                            color_pixel(
+                                &(zone.max_i().min(self.map.size - 1), j).into(),
+                                color,
+                                self.map.size,
+                                &mut color_vec,
+                            );
+                        }
+                    };
+
+                    for zone in zone_to_visit {
+                        draw_zone(zone, &color_to_visit);
+                    }
+
+                    draw_zone(&computing.0, &[1.0, 0.0, 1.0, 1.0]);
+
+                    MainState::draw_flowfield(
+                        &self.imgui_wrapper.ui,
+                        self.half_screen(),
+                        &mut self.sprite,
+                        ctx,
+                        &computing.0,
+                        &computing.1,
+                        computing.1.integration.arr.iter().min().unwrap().clone(),
+                        computing.1.integration.arr.iter().max().unwrap().clone(),
+                    );
+
+                    if computed.len() > 0 {
+                        let min = computed
+                            .iter()
+                            .map(|c| c.1.integration.arr.iter().min().unwrap().clone())
+                            .min()
+                            .unwrap();
+                        let max = computed
+                            .iter()
+                            .map(|c| c.1.integration.arr.iter().max().unwrap().clone())
+                            .max()
+                            .unwrap();
+
+                        for c in computed {
+                            MainState::draw_flowfield(
+                                &self.imgui_wrapper.ui,
+                                self.half_screen(),
+                                &mut self.sprite,
+                                ctx,
+                                &c.0,
+                                &c.1,
+                                min,
+                                max,
+                            );
+                        }
+                    }
+                }
+                FullPathCompute::FlowFieldComputed { flowfields } => {
+                    let min = flowfields
+                        .iter()
+                        .map(|c| c.1.integration.arr.iter().min().unwrap().clone())
+                        .min()
+                        .unwrap();
+                    let max = flowfields
+                        .iter()
+                        .map(|c| c.1.integration.arr.iter().max().unwrap().clone())
+                        .max()
+                        .unwrap();
+
+                    for c in flowfields.iter().rev() {
+                        MainState::draw_flowfield(
+                            &self.imgui_wrapper.ui,
+                            self.half_screen(),
+                            &mut self.sprite,
+                            ctx,
+                            &c.0,
+                            &c.1,
+                            min,
+                            max,
+                        );
                     }
                 }
                 _ => {}
@@ -485,7 +599,7 @@ impl MainState {
     fn draw_map(&mut self, ctx: &mut Context) -> GameResult<()> {
         let point = na::Point2::from(self.ui_mut().cam_pos_smooth);
 
-        let half_screen = self.half_screen(ctx);
+        let half_screen = self.half_screen();
 
         let param = graphics::DrawParam::new()
             .dest(point * self.ui_mut().zoom_smooth + half_screen)
@@ -497,7 +611,10 @@ impl MainState {
 
         let mut color_vec: Vec<u8> = Vec::new();
 
-        let (min, max) = (self.map.cost.min() as i32, self.map.cost.max() as i32);
+        let (min, max) = (
+            self.map.cost.arr.iter().min().unwrap().clone() as i32,
+            self.map.cost.arr.iter().max().unwrap().clone() as i32,
+        );
 
         for j in 0..self.map.size {
             for i in 0..self.map.size {
@@ -541,29 +658,30 @@ impl MainState {
         Ok(())
     }
 
-    fn draw_flowfield(&mut self, ctx: &mut Context, flowfield: &FlowField) -> GameResult<()> {
-        let point = na::Point2::from(self.ui_mut().cam_pos_smooth);
-
-        let half_screen = self.half_screen(ctx);
+    pub fn draw_flowfield(
+        ui: &HighLevelUI,
+        half_screen: Vector2,
+        sprite: &mut AllSprite,
+        ctx: &mut Context,
+        zone: &Zone,
+        flowfield: &FlowField,
+        min: i32,
+        max: i32,
+    ) -> GameResult<()> {
+        let point = na::Point2::from(
+            ui.cam_pos_smooth
+                + misc::Vector2::new(
+                    zone.min_i() as f32 * GRID_CELL_SIZE,
+                    zone.min_j() as f32 * GRID_CELL_SIZE,
+                ),
+        );
 
         let param = graphics::DrawParam::new()
-            .dest(point * self.ui_mut().zoom_smooth + half_screen)
+            .dest(point * ui.zoom_smooth + half_screen)
             .offset(na::Point2::new(0.0, 0.0))
-            .scale(na::Vector2::new(
-                self.ui_mut().zoom_smooth,
-                self.ui_mut().zoom_smooth,
-            ));
+            .scale(na::Vector2::new(ui.zoom_smooth, ui.zoom_smooth));
 
-        let mut color_vec: Vec<u8> = Vec::new();
-
-        let (min, max) = match self.ui_mut().flowfield_mode {
-            ui_impl::DisplayFlowField::Cost => {
-                (flowfield.cost.min() as i32, flowfield.cost.max() as i32)
-            }
-            ui_impl::DisplayFlowField::Integration => {
-                (flowfield.integration.min(), flowfield.integration.max())
-            }
-        };
+        let mut color_vec: Vec<u8> = Vec::with_capacity(GRID_SIZE * GRID_SIZE * 4);
 
         for j in 0..GRID_SIZE {
             for i in 0..GRID_SIZE {
@@ -573,12 +691,7 @@ impl MainState {
                     (1.0 - f32::exp(-f32::powf(i, accel))) / 0.63
                 }
 
-                let v = match self.ui_mut().flowfield_mode {
-                    ui_impl::DisplayFlowField::Cost => flowfield.cost.get(&(i, j).into()) as i32,
-                    ui_impl::DisplayFlowField::Integration => {
-                        flowfield.integration.get(&(i, j).into())
-                    }
-                };
+                let v = { flowfield.integration.get(&(i, j).into()) };
 
                 let v = (v - min) as f32 / (max - min) as f32;
 
@@ -601,12 +714,12 @@ impl MainState {
             ctx,
             &img,
             graphics::DrawParam::new()
-                .dest(point * self.ui_mut().zoom_smooth + half_screen)
+                .dest(point * ui.zoom_smooth + half_screen)
                 //            .rotation(20.0 / 100.0)
                 .offset(na::Point2::new(0.0, 0.0))
                 .scale(na::Vector2::new(
-                    self.ui_mut().zoom_smooth * GRID_CELL_SIZE as f32,
-                    self.ui_mut().zoom_smooth * GRID_CELL_SIZE as f32,
+                    ui.zoom_smooth * GRID_CELL_SIZE as f32,
+                    ui.zoom_smooth * GRID_CELL_SIZE as f32,
                 )),
         )?;
 
@@ -623,7 +736,7 @@ impl MainState {
         }
 
         //Flow arrow
-        if self.ui_mut().flowfield_show_arrow {
+        if ui.flowfield_show_arrow {
             for j in 0..GRID_SIZE {
                 for i in 0..GRID_SIZE {
                     let (i, j) = (i as f32, j as f32);
@@ -638,22 +751,22 @@ impl MainState {
                     ));
 
                     if x * y > 0 {
-                        self.sprite.diag_se.add(p);
+                        sprite.diag_se.add(p);
                     } else if x * y < 0 {
-                        self.sprite.diag_ne.add(p);
+                        sprite.diag_ne.add(p);
                     } else if x != 0 {
-                        self.sprite.hori.add(p);
+                        sprite.hori.add(p);
                     } else if y != 0 {
-                        self.sprite.vert.add(p);
+                        sprite.vert.add(p);
                     };
                 }
             }
 
-            graphics::draw(ctx, &self.sprite.hori, param)?;
-            graphics::draw(ctx, &self.sprite.vert, param)?;
-            graphics::draw(ctx, &self.sprite.diag_ne, param)?;
-            graphics::draw(ctx, &self.sprite.diag_se, param)?;
-            self.sprite.clear();
+            graphics::draw(ctx, &sprite.hori, param)?;
+            graphics::draw(ctx, &sprite.vert, param)?;
+            graphics::draw(ctx, &sprite.diag_ne, param)?;
+            graphics::draw(ctx, &sprite.diag_se, param)?;
+            sprite.clear();
         }
         Ok(())
     }
