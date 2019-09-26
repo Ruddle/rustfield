@@ -10,7 +10,7 @@ pub struct AStarNode {
 
 impl AStarNode {
     pub fn f_static(g: i32, h: i32) -> i32 {
-        g + h * 1
+        g + h * 2
     }
 
     pub fn f(&self) -> i32 {
@@ -125,7 +125,11 @@ impl AStarCompute {
                         match nodes_state.get(&neighbor_pos) {
                             NodeState::Unknown => {
                                 let g = min_node.g
-                                    + (neighbor_dist as i32 * cost.get(&neighbor_pos) as i32);
+                                    + (neighbor_dist as i32
+                                        * match cost.get(&neighbor_pos) {
+                                            255 => 255000,
+                                            x => x as i32,
+                                        });
                                 let h = to.distance(&neighbor_pos);
                                 let f = AStarNode::f_static(g, h);
 
