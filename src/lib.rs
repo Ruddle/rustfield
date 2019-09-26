@@ -73,10 +73,6 @@ impl EventHandler for MainState {
                 }
             }
 
-            //            for i in field.arr.iter_mut() {
-            //                *i = i.powf(2.0);
-            //            }
-
             for (i, v) in self.map.cost.arr.iter_mut().zip(field.arr) {
                 *i = (v * 255.0).min(255.0).max(1.0) as u8;
             }
@@ -520,7 +516,7 @@ impl MainState {
                     for node in open_nodes {
                         color_pixel(
                             &node.cell_pos,
-                            &[0.5, 0.5, 0.5, 0.2],
+                            &[1.0, 0.0, 1.0, 1.0],
                             self.map.size,
                             &mut color_vec,
                         )
@@ -528,14 +524,6 @@ impl MainState {
                     //                    for node in closed_nodes {
                     //                        color_pixel(&node, &[1.0, 0.0, 0.0, 0.2], self.map.size, &mut color_vec)
                     //                    }
-                    for min in open_nodes.iter().min_by_key(|x| x.f()) {
-                        color_pixel(
-                            &min.cell_pos,
-                            &[1.0, 0.0, 1.0, 1.0],
-                            self.map.size,
-                            &mut color_vec,
-                        );
-                    }
                 }
 
                 AStarCompute::Computed(astar::Result { from, to, path, .. }) => {
