@@ -76,96 +76,95 @@ impl HighLevelUI {
     pub fn draw(&mut self, ui: &imgui::Ui) {
         {
             // Window
-            ui.window(im_str!("Rust field"))
-                .size([300.0, 400.0], imgui::Condition::FirstUseEver)
-                .position([400.0, 100.0], imgui::Condition::FirstUseEver)
-                .build(|| {
-                    ui.text(im_str!("Draw a maze"));
-                    ui.text(im_str!("Then check the 'Trip setting'"));
-                    ui.separator();
+            Window::new(im_str!("Rust field"))
+            .size([300.0, 400.0], imgui::Condition::FirstUseEver)
+            .build(ui, || {
+                                ui.text(im_str!("Draw a maze"));
+                                ui.text(im_str!("Then check the 'Trip setting'"));
+                                ui.separator();
 
-                    ui.text(im_str!("Control: "));
-                    ui.radio_button(im_str!("Cost drawing"),&mut self.cursor_control,CursorControl::CostDrawing);
-                    ui.same_line(0.0);
-                    ui.radio_button(im_str!("Trip setting"),&mut self.cursor_control,CursorControl::TripSetting);
+                                ui.text(im_str!("Control: "));
+                                ui.radio_button(im_str!("Cost drawing"),&mut self.cursor_control,CursorControl::CostDrawing);
+                                ui.same_line(0.0);
+                                ui.radio_button(im_str!("Trip setting"),&mut self.cursor_control,CursorControl::TripSetting);
 
-                    match self.cursor_control{
-                        CursorControl::CostDrawing =>{
-                            ui.bullet_text(im_str!("Left click : Wall"));
-                            ui.bullet_text(im_str!("Right click : Erase"));
-                            ui.bullet_text(im_str!("Middle click : Reset"));
-                        }
-                        CursorControl::TripSetting =>{
-                            ui.bullet_text(im_str!("Left click : Place start"));
-                            ui.bullet_text(im_str!("Right click : Place end"));
-                            ui.bullet_text(im_str!("Middle click : Reset path"));
-                        }
-                    }
+                                match self.cursor_control{
+                                    CursorControl::CostDrawing =>{
+                                        ui.bullet_text(im_str!("Left click : Wall"));
+                                        ui.bullet_text(im_str!("Right click : Erase"));
+                                        ui.bullet_text(im_str!("Middle click : Reset"));
+                                    }
+                                    CursorControl::TripSetting =>{
+                                        ui.bullet_text(im_str!("Left click : Place start"));
+                                        ui.bullet_text(im_str!("Right click : Place end"));
+                                        ui.bullet_text(im_str!("Middle click : Reset path"));
+                                    }
+                                }
 
-                    ui.bullet_text(im_str!("ZQSD : Pan camera"));
-                    ui.bullet_text(im_str!("Scroll : Zoom camera"));
-
-
-                    ui.separator();
+                                ui.bullet_text(im_str!("ZQSD : Pan camera"));
+                                ui.bullet_text(im_str!("Scroll : Zoom camera"));
 
 
-                    ui.text(im_str!("Display: "));
-                    if ui.checkbox(im_str!("Show flow arrows"), &mut self.flowfield_show_arrow) {
-                        println!("check changed");
-                        println!("to {}", self.flowfield_show_arrow);
-                    }
-
-                    if ui.is_item_hovered(){
-                        ui.tooltip(||
-                                       {
-                                           let tok = ui.push_text_wrap_pos(ui.get_cursor_pos()[0]+ 150.0);
-                                           ui.text(im_str!("Shows an arrow on each cell of the map indicating the shortest way to the target"));
-                                           std::mem::drop(tok);
-                                       }
-                        );
-                    }
-
-                    ui.separator();
-                    ui.text(im_str!("Computations: "));
-                    ui.checkbox(im_str!("Auto delete old path"), &mut self.auto_delete);
-                    ui.checkbox(im_str!("Compute all instantly"), &mut self.compute_all);
-                    ui.same_line(0.0);
-                    ui.text(im_str!(
-                        "/ {} ms",
-                        self.last_compute_ms
-                    ));
+                                ui.separator();
 
 
-                    if !self.compute_all {
-                        ui.checkbox(im_str!("Compute live"), &mut self.compute_live);
-                    }
+                                ui.text(im_str!("Display: "));
+                                if ui.checkbox(im_str!("Show flow arrows"), &mut self.flowfield_show_arrow) {
+                                    println!("check changed");
+                                    println!("to {}", self.flowfield_show_arrow);
+                                }
 
-                    if !self.compute_all  && self.compute_live{
-                        imgui::SliderInt::new(ui,im_str!("step per frame "),&mut self.step_per_frame,0,100).build();
-                    }
+                                if ui.is_item_hovered(){
+                                    ui.tooltip(||
+                                                   {
+                                                       let tok = ui.push_text_wrap_pos(ui.get_cursor_pos()[0]+ 150.0);
+                                                       ui.text(im_str!("Shows an arrow on each cell of the map indicating the shortest way to the target"));
+                                                       std::mem::drop(tok);
+                                                   }
+                                    );
+                                }
 
-                    if !self.compute_live && !self.compute_all {
-                        if ui.small_button(im_str!("Compute step")) {
-                            self.compute_step = true;
-                        }
-                    }
-                    ui.separator();
-
-                    ui.text(im_str!("Path list: "));
-                    for (index,e) in self.full_pathfinding.iter_mut().enumerate() {
-                        ui.text(im_str!(
-                        "path#{}",
-                        index
-                    ));
-                        ui.same_line(0.0);
-                        if ui.small_button(im_str!("Delete##{}",index).as_ref()) {
-                            e.0 = true;
-                        }
-                    }
-
+                                ui.separator();
+                                ui.text(im_str!("Computations: "));
+                                ui.checkbox(im_str!("Auto delete old path"), &mut self.auto_delete);
+                                ui.checkbox(im_str!("Compute all instantly"), &mut self.compute_all);
+                                ui.same_line(0.0);
+                                ui.text(im_str!(
+                                    "/ {} ms",
+                                    self.last_compute_ms
+                                ));
 
 
-                });
+                                if !self.compute_all {
+                                    ui.checkbox(im_str!("Compute live"), &mut self.compute_live);
+                                }
+
+                                if !self.compute_all  && self.compute_live{
+                                    imgui::Slider::new(im_str!("step per frame "),0..=100).build(ui, &mut self.step_per_frame,);
+                                }
+
+                                if !self.compute_live && !self.compute_all {
+                                    if ui.small_button(im_str!("Compute step")) {
+                                        self.compute_step = true;
+                                    }
+                                }
+                                ui.separator();
+
+                                ui.text(im_str!("Path list: "));
+                                for (index,e) in self.full_pathfinding.iter_mut().enumerate() {
+                                    ui.text(im_str!(
+                                    "path#{}",
+                                    index
+                                ));
+                                    ui.same_line(0.0);
+                                    if ui.small_button(im_str!("Delete##{}",index).as_ref()) {
+                                        e.0 = true;
+                                    }
+                                }
+
+
+
+                            });
         }
     }
 }
