@@ -38,6 +38,7 @@ pub struct HighLevelUI {
     pub auto_delete: bool,
 
     pub full_pathfinding: Vec<(bool, String)>,
+    pub number_of_agent: usize,
 }
 
 impl HighLevelUI {
@@ -64,6 +65,7 @@ impl HighLevelUI {
             last_compute_ms: 0,
             auto_delete: true,
             full_pathfinding: Vec::new(),
+            number_of_agent: 0,
         }
     }
 
@@ -180,6 +182,8 @@ impl HighLevelUI {
                                     }
                                 }
 
+                                ui.separator();
+                                ui.text(im_str!("Agents: {}", self.number_of_agent));
 
 
                             });

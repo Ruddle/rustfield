@@ -128,7 +128,7 @@ impl AStarCompute {
                                     + (neighbor_dist as i32
                                         * match cost.get(&neighbor_pos) {
                                             255 => 255000,
-                                            x => x as i32,
+                                            x => *x as i32,
                                         });
                                 let h = to.distance(&neighbor_pos);
                                 let f = AStarNode::f_static(g, h);

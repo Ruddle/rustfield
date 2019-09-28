@@ -21,7 +21,7 @@ impl PathComputer {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Zone {
     pub zx: usize,
     pub zy: usize,
@@ -34,6 +34,10 @@ impl Zone {
 
             zy: y as usize / GRID_SIZE_MINUS,
         }
+    }
+
+    pub fn large_cell_pos(&self) -> CellPos {
+        (self.zx, self.zy).into()
     }
 
     pub fn min_i(&self) -> usize {
@@ -51,7 +55,7 @@ impl Zone {
 }
 
 pub struct Result {
-    pub flowfields: Vec<(Zone, FlowField)>,
+    pub computed: Field<Option<Box<FlowField>>>,
 }
 
 pub enum FullPathCompute {
@@ -62,8 +66,8 @@ pub enum FullPathCompute {
     ComputingFlowFields {
         astar: astar::Result,
         zone_to_visit: Vec<Zone>,
-        computing: (Zone, FlowField),
-        computed: Vec<(Zone, FlowField)>,
+        computing_zone: Zone,
+        computed: Field<Option<Box<FlowField>>>,
     },
     FlowFieldComputed(Result),
 }
@@ -77,10 +81,110 @@ impl FullPathCompute {
                     i: i - zone.min_i(),
                     j: j - zone.min_j(),
                 };
-                computing_field.set(&cell_pos, global_cost.get(&CellPos { i, j }))
+                computing_field.set(&cell_pos, *global_cost.get(&CellPos { i, j }))
             }
         }
         computing_field
+    }
+
+    fn compute_junction(
+        computed: &Field<Option<Box<FlowField>>>,
+        next_zone: &Zone,
+        next: &mut FlowField,
+    ) {
+        for di in -1..=1_i32 {
+            for dj in -1..=1_i32 {
+                let zx = next_zone.zx as i32 + di;
+                let zy = next_zone.zy as i32 + dj;
+
+                if (di != 0 || dj != 0)
+                    && zx >= 0
+                    && zy >= 0
+                    && zx < computed.width as i32
+                    && zy < computed.height as i32
+                {
+                    let last_zone = Zone {
+                        zx: zx as usize,
+                        zy: zy as usize,
+                    };
+
+                    if let Some(last_flowfield) = computed.get(&last_zone.large_cell_pos()) {
+                        let mut common_globals: Vec<CellPos> = Vec::new();
+                        // last | next
+                        if last_zone.zx < next_zone.zx && last_zone.zy == next_zone.zy {
+                            for j in last_zone.min_j()..=last_zone.max_j() {
+                                common_globals.push((last_zone.max_i(), j).into())
+                            }
+                        }
+                        //  next | last
+                        else if last_zone.zx > next_zone.zx && last_zone.zy == next_zone.zy {
+                            for j in last_zone.min_j()..=last_zone.max_j() {
+                                common_globals.push((last_zone.min_i(), j).into())
+                            }
+                        }
+                        //  last
+                        //  ____
+                        //  next
+                        else if last_zone.zx == next_zone.zx && last_zone.zy < next_zone.zy {
+                            for i in last_zone.min_i()..=last_zone.max_i() {
+                                common_globals.push((i, last_zone.max_j()).into())
+                            }
+                        }
+                        //  next
+                        //  ____
+                        //  last
+                        else if last_zone.zx == next_zone.zx && last_zone.zy > next_zone.zy {
+                            for i in last_zone.min_i()..=last_zone.max_i() {
+                                common_globals.push((i, last_zone.min_j()).into())
+                            }
+                        }
+                        //  next
+                        //  ____
+                        //       last
+                        else if last_zone.zx > next_zone.zx && last_zone.zy > next_zone.zy {
+                            common_globals.push((last_zone.min_i(), last_zone.min_j()).into())
+                        }
+                        //  last
+                        //  ____
+                        //       next
+                        else if last_zone.zx < next_zone.zx && last_zone.zy < next_zone.zy {
+                            common_globals.push((last_zone.max_i(), last_zone.max_j()).into())
+                        }
+                        //      next
+                        //  ____
+                        //  last
+                        else if last_zone.zx < next_zone.zx && last_zone.zy > next_zone.zy {
+                            common_globals.push((last_zone.max_i(), last_zone.min_j()).into())
+                        }
+                        //      last
+                        //  ____
+                        //  next
+                        else if last_zone.zx > next_zone.zx && last_zone.zy < next_zone.zy {
+                            common_globals.push((last_zone.min_i(), last_zone.max_j()).into())
+                        } else {
+                            println!("{:?} {:?}", last_zone, next_zone);
+                        }
+
+                        for global in common_globals {
+                            let local_last = CellPos {
+                                i: global.i - last_zone.min_i(),
+                                j: global.j - last_zone.min_j(),
+                            };
+
+                            let local_next = CellPos {
+                                i: global.i - next_zone.min_i(),
+                                j: global.j - next_zone.min_j(),
+                            };
+
+                            next.integration
+                                .set(&local_next, *last_flowfield.integration.get(&local_last));
+                            next.to_visit.push(local_next);
+                            next.state = FlowFieldState::ComputingIntegration
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn step(self) -> Self {
@@ -113,19 +217,63 @@ impl FullPathCompute {
                         zy: node.j / GRID_SIZE_MINUS,
                     };
 
-                    if match zone_traversed_vec.last() {
-                        Some(z) if z == &zone => false,
-                        _ => true,
-                    } {
-                        zone_traversed_vec.push(zone);
+                    match zone_traversed_vec.last() {
+                        Some(last) => {
+                            if last != &zone {
+                                // Direct diagonal traversal is not allowed
+                                if last.zx != zone.zx && last.zy != zone.zy {
+                                    let indirection = Zone {
+                                        zx: last.zx,
+                                        zy: zone.zy,
+                                    };
+                                    zone_traversed_vec.push(indirection);
+                                }
+                                zone_traversed_vec.push(zone);
+                            }
+                        }
+                        _ => {
+                            zone_traversed_vec.push(zone);
+                        }
                     }
                 }
 
-                let first_zone = zone_traversed_vec.pop().unwrap();
+                //                let mut with_grow = zone_traversed_vec;
+
+                let mut with_grow = Vec::new();
+                for zone in &zone_traversed_vec {
+                    for i in -1..=1_i32 {
+                        for j in -1..=1_i32 {
+                            if i == 0 || j == 0 {
+                                let zx = zone.zx as i32 + i;
+                                let zy = zone.zy as i32 + j;
+
+                                if zx >= 0
+                                    && zy >= 0
+                                    && (zx as usize) < (astar.cost.width / GRID_SIZE_MINUS + 1)
+                                    && (zy as usize) < (astar.cost.height / GRID_SIZE_MINUS + 1)
+                                {
+                                    let new_zone = Zone {
+                                        zx: zx as usize,
+                                        zy: zy as usize,
+                                    };
+                                    if !zone_traversed_vec.contains(&new_zone) {
+                                        with_grow.push(new_zone);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                with_grow.extend(zone_traversed_vec);
+                let mut r = with_grow.clone();
+                with_grow.reverse();
+                with_grow.extend(r);
+
+                let first_zone = with_grow.pop().unwrap();
                 let mut computing_field_cost =
                     FullPathCompute::zone_global_cost_to_local_cost(&first_zone, &astar.cost);
 
-                let mut computing_field = FlowField {
+                let mut computing_field = Box::new(FlowField {
                     objective: CellPos {
                         i: astar.to.i % GRID_SIZE_MINUS,
                         j: astar.to.j % GRID_SIZE_MINUS,
@@ -139,135 +287,133 @@ impl FullPathCompute {
                     flow: Field::new(4, GRID_SIZE, GRID_SIZE),
                     to_visit: Vec::new(),
                     state: FlowFieldState::Created,
-                };
+                    skip_flow: true,
+                });
+
+                let mut computed = Field::new(
+                    None,
+                    astar.cost.width / GRID_SIZE_MINUS + 1,
+                    astar.cost.height / GRID_SIZE_MINUS + 1,
+                );
+
+                computed.set(&first_zone.large_cell_pos(), Some(computing_field));
 
                 FullPathCompute::ComputingFlowFields {
                     astar,
-                    zone_to_visit: zone_traversed_vec,
-                    computing: (first_zone, computing_field),
-                    computed: Vec::new(),
+                    zone_to_visit: with_grow,
+                    computing_zone: first_zone,
+                    computed,
                 }
             }
 
             FullPathCompute::ComputingFlowFields {
                 astar,
                 mut zone_to_visit,
-                mut computing,
+                mut computing_zone,
                 mut computed,
             } => {
-                computing.1.step();
-                match computing.1.state {
+                let mut computing = computed
+                    .get_mut(&computing_zone.large_cell_pos())
+                    .as_mut()
+                    .unwrap();
+
+                computing.step();
+
+                match computing.state {
                     FlowFieldState::Ready => {
-                        computed.push(computing);
                         if zone_to_visit.is_empty() {
-                            FullPathCompute::FlowFieldComputed(Result {
-                                flowfields: computed,
-                            })
+                            let indexes: Vec<usize> = computed
+                                .arr
+                                .iter()
+                                .enumerate()
+                                .flat_map(|(index, c)| c.as_ref().map(|c| index))
+                                .collect();
+
+                            for index in indexes {
+                                let zone = Zone {
+                                    zx: index % computed.width,
+                                    zy: index / computed.width,
+                                };
+
+                                let mut me = std::mem::replace(
+                                    computed.get_mut(&zone.large_cell_pos()),
+                                    None,
+                                );
+
+                                let mut neighborhood = HashMap::new();
+                                for i in -1..=1_i32 {
+                                    for j in -1..=1_i32 {
+                                        if (i != 0 || j != 0)
+                                            && i + zone.zx as i32 >= 0
+                                            && j + zone.zy as i32 >= 0
+                                            && (i + zone.zx as i32) < computed.width as i32
+                                            && (j + zone.zy as i32) < computed.height as i32
+                                        {
+                                            if let Some(f) = computed.get(
+                                                &(i + zone.zx as i32, j + zone.zy as i32).into(),
+                                            ) {
+                                                neighborhood.insert((i, j), f);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                for me in &mut me {
+                                    me.step_flow_with_neighbors(&neighborhood);
+                                }
+
+                                std::mem::replace(computed.get_mut(&zone.large_cell_pos()), me);
+                            }
+
+                            FullPathCompute::FlowFieldComputed(Result { computed })
                         } else {
                             let next_zone = zone_to_visit.pop().unwrap();
-                            let cost = FullPathCompute::zone_global_cost_to_local_cost(
-                                &next_zone,
-                                &astar.cost,
-                            );
+                            match computed.get(&next_zone.large_cell_pos()) {
+                                Some(next) => {
+                                    let mut next = std::mem::replace(
+                                        computed.get_mut(&next_zone.large_cell_pos()),
+                                        None,
+                                    )
+                                    .unwrap();
 
-                            let mut integration = Field::new(
-                                crate::flowfield::MAX_INTEGRATION as i32,
-                                GRID_SIZE,
-                                GRID_SIZE,
-                            );
+                                    FullPathCompute::compute_junction(
+                                        &computed, &next_zone, &mut next,
+                                    );
+                                    computed.set(&next_zone.large_cell_pos(), Some(next));
+                                }
+                                None => {
+                                    let cost = FullPathCompute::zone_global_cost_to_local_cost(
+                                        &next_zone,
+                                        &astar.cost,
+                                    );
+                                    let mut next_integration = Field::new(
+                                        crate::flowfield::MAX_INTEGRATION as i32,
+                                        GRID_SIZE,
+                                        GRID_SIZE,
+                                    );
+                                    let mut next_flow = Field::<i8>::new(4, GRID_SIZE, GRID_SIZE);
+                                    let mut next_to_visit = Vec::new();
 
-                            let mut next_flow = Field::<i8>::new(4, GRID_SIZE, GRID_SIZE);
-                            let mut to_visit = Vec::new();
-
-                            //Fill integration and to_visit with just completed field
-                            let (last_zone, last_flowfield) = computed.last().unwrap();
-
-                            let mut common_globals: Vec<CellPos> = Vec::new();
-
-                            // last | next
-                            if last_zone.zx < next_zone.zx && last_zone.zy == next_zone.zy {
-                                for j in last_zone.min_j()..=last_zone.max_j() {
-                                    common_globals.push((last_zone.max_i(), j).into())
+                                    let mut next = Box::new(FlowField {
+                                        objective: CellPos::new(),
+                                        cost,
+                                        integration: next_integration,
+                                        flow: next_flow,
+                                        to_visit: next_to_visit,
+                                        state: FlowFieldState::ComputingIntegration,
+                                        skip_flow: true,
+                                    });
+                                    FullPathCompute::compute_junction(
+                                        &computed, &next_zone, &mut next,
+                                    );
+                                    computed.set(&next_zone.large_cell_pos(), Some(next));
                                 }
                             }
-                            //  next | last
-                            else if last_zone.zx > next_zone.zx && last_zone.zy == next_zone.zy {
-                                for j in last_zone.min_j()..=last_zone.max_j() {
-                                    common_globals.push((last_zone.min_i(), j).into())
-                                }
-                            }
-                            //  last
-                            //  ____
-                            //  next
-                            else if last_zone.zx == next_zone.zx && last_zone.zy < next_zone.zy {
-                                for i in last_zone.min_i()..=last_zone.max_i() {
-                                    common_globals.push((i, last_zone.max_j()).into())
-                                }
-                            }
-                            //  next
-                            //  ____
-                            //  last
-                            else if last_zone.zx == next_zone.zx && last_zone.zy > next_zone.zy {
-                                for i in last_zone.min_i()..=last_zone.max_i() {
-                                    common_globals.push((i, last_zone.min_j()).into())
-                                }
-                            }
-                            //  next
-                            //  ____
-                            //       last
-                            else if last_zone.zx > next_zone.zx && last_zone.zy > next_zone.zy {
-                                common_globals.push((last_zone.min_i(), last_zone.min_j()).into())
-                            }
-                            //  last
-                            //  ____
-                            //       next
-                            else if last_zone.zx < next_zone.zx && last_zone.zy < next_zone.zy {
-                                common_globals.push((last_zone.max_i(), last_zone.max_j()).into())
-                            }
-                            //      next
-                            //  ____
-                            //  last
-                            else if last_zone.zx < next_zone.zx && last_zone.zy > next_zone.zy {
-                                common_globals.push((last_zone.max_i(), last_zone.min_j()).into())
-                            }
-                            //      last
-                            //  ____
-                            //  next
-                            else if last_zone.zx > next_zone.zx && last_zone.zy < next_zone.zy {
-                                common_globals.push((last_zone.min_i(), last_zone.max_j()).into())
-                            } else {
-                                println!("{:?} {:?}", last_zone, next_zone);
-                            }
 
-                            for global in common_globals {
-                                let local_last = CellPos {
-                                    i: global.i - last_zone.min_i(),
-                                    j: global.j - last_zone.min_j(),
-                                };
-
-                                let local_next = CellPos {
-                                    i: global.i - next_zone.min_i(),
-                                    j: global.j - next_zone.min_j(),
-                                };
-
-                                integration
-                                    .set(&local_next, last_flowfield.integration.get(&local_last));
-                                to_visit.push(local_next);
-                                next_flow.set(&local_next, last_flowfield.flow.get(&local_last));
-                            }
-
-                            let computing_flow = FlowField {
-                                objective: CellPos::new(),
-                                cost,
-                                integration,
-                                flow: next_flow,
-                                to_visit,
-                                state: FlowFieldState::ComputingIntegration,
-                            };
                             FullPathCompute::ComputingFlowFields {
                                 astar,
                                 zone_to_visit,
-                                computing: (next_zone, computing_flow),
+                                computing_zone: next_zone,
                                 computed,
                             }
                         }
@@ -275,14 +421,11 @@ impl FullPathCompute {
                     _ => FullPathCompute::ComputingFlowFields {
                         astar,
                         zone_to_visit,
-                        computing,
+                        computing_zone,
                         computed,
                     },
                 }
             }
-            //                FullPathCompute::FlowFieldComputed {
-            //                flowfields: Vec::new(),
-            //            }
             _ => self,
         }
     }

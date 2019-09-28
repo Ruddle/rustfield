@@ -75,6 +75,16 @@ impl Debug for Field<u8> {
         write!(f, "Field of u8")
     }
 }
+impl Debug for Field<i32> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Field of i32")
+    }
+}
+impl Debug for Field<i8> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Field of i8")
+    }
+}
 
 impl Debug for Field<bool> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -195,7 +205,7 @@ impl<T: Debug> Field<T> {
 
 impl<T> Field<T>
 where
-    T: std::marker::Copy + Debug,
+    T: Debug + Clone,
 {
     pub fn new(initial: T, width: usize, height: usize) -> Field<T> {
         let total = width * height;
@@ -218,8 +228,16 @@ where
         cell_pos.i + cell_pos.j * self.width
     }
 
-    pub fn get(&self, position: &CellPos) -> T {
-        self.arr[self.index_of(position)]
+    pub fn get_safe(&self, position: &CellPos) -> Option<&T> {
+        self.arr.get(self.index_of(position))
+    }
+    pub fn get(&self, position: &CellPos) -> &T {
+        &self.arr[self.index_of(position)]
+    }
+
+    pub fn get_mut(&mut self, position: &CellPos) -> &mut T {
+        let index = self.index_of(position);
+        &mut self.arr[index]
     }
 
     pub fn set(&mut self, position: &CellPos, v: T) {

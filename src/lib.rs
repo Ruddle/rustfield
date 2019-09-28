@@ -43,40 +43,13 @@ impl EventHandler for MainState {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
         if self.ui().set_demo {
             self.ui_mut().set_demo = false;
-            use rand::{Rng, SeedableRng};
-
-            let mut rng: rand::prelude::StdRng = SeedableRng::seed_from_u64(0);
-
-            let mut field = Field::<f64>::new(0.0, MAP_SIZE, MAP_SIZE);
-
-            //Put random
-            for i in field.arr.iter_mut() {
-                let v: f64 = rng.gen_range(0.0, 1.0);
-                let v = if v < 0.97 { 0.0 } else { 1.0 };
-                *i = v;
-            }
-
-            //Smooth
-            for _ in 0..3 {
-                for i in 1..MAP_SIZE - 1 {
-                    for j in 1..MAP_SIZE - 1 {
-                        let mut acc = 0.0;
-                        for di in -1..=1 {
-                            for dj in -1..=1 {
-                                let ni: usize = (di + i as i32) as usize;
-                                let nj: usize = (dj + j as i32) as usize;
-                                acc += field.arr[ni + nj * MAP_SIZE]
-                            }
-                        }
-                        field.arr[i + j * MAP_SIZE] = acc / 9.0;
-                    }
-                }
-            }
-
+            let field = MainState::create_demo_cost_field();
             for (i, v) in self.map.cost.arr.iter_mut().zip(field.arr) {
                 *i = (v * 255.0).min(255.0).max(1.0) as u8;
             }
         }
+
+        self.ui_mut().number_of_agent = self.agents.len();
 
         for agent in &mut self.agents {
             agent.step();
@@ -178,15 +151,22 @@ impl EventHandler for MainState {
 
         if !self.imgui_wrapper.imgui.io().want_capture_mouse {
             if self.ui().keys_triggered.contains(&KeyCode::Space) {
-                let mut rng = rand::prelude::thread_rng();
-                for _ in 0..250 {
-                    let x: f32 = rng.gen_range(-GRID_CELL_SIZE * 10.0, GRID_CELL_SIZE * 10.0);
-                    let y: f32 = rng.gen_range(-GRID_CELL_SIZE * 10.0, GRID_CELL_SIZE * 10.0);
-
+                if self.ui().keys_pressed.contains(&KeyCode::LControl) {
                     self.agents.push(Agent::new(Vector2::new(
-                        cell_pos.i as f32 * GRID_CELL_SIZE + x,
-                        cell_pos.j as f32 * GRID_CELL_SIZE + y,
+                        cell_pos.i as f32 * GRID_CELL_SIZE,
+                        cell_pos.j as f32 * GRID_CELL_SIZE,
                     )));
+                } else {
+                    let mut rng = rand::prelude::thread_rng();
+                    for _ in 0..250 {
+                        let x: f32 = rng.gen_range(-GRID_CELL_SIZE * 10.0, GRID_CELL_SIZE * 10.0);
+                        let y: f32 = rng.gen_range(-GRID_CELL_SIZE * 10.0, GRID_CELL_SIZE * 10.0);
+
+                        self.agents.push(Agent::new(Vector2::new(
+                            cell_pos.i as f32 * GRID_CELL_SIZE + x,
+                            cell_pos.j as f32 * GRID_CELL_SIZE + y,
+                        )));
+                    }
                 }
             }
             if self.ui().keys_triggered.contains(&KeyCode::Delete) {
@@ -483,6 +463,39 @@ impl MainState {
         ()
     }
 
+    pub fn create_demo_cost_field() -> Field<f64> {
+        use rand::{Rng, SeedableRng};
+
+        let mut rng: rand::prelude::StdRng = SeedableRng::seed_from_u64(0);
+
+        let mut field = Field::<f64>::new(0.0, MAP_SIZE, MAP_SIZE);
+
+        //Put random
+        for i in field.arr.iter_mut() {
+            let v: f64 = rng.gen_range(0.0, 1.0);
+            let v = if v < 0.97 { 0.0 } else { 1.0 };
+            *i = v;
+        }
+
+        //Smooth
+        for _ in 0..4 {
+            for i in 1..MAP_SIZE - 1 {
+                for j in 1..MAP_SIZE - 1 {
+                    let mut acc = 0.0;
+                    for di in -1..=1 {
+                        for dj in -1..=1 {
+                            let ni: usize = (di + i as i32) as usize;
+                            let nj: usize = (dj + j as i32) as usize;
+                            acc += field.arr[ni + nj * MAP_SIZE]
+                        }
+                    }
+                    field.arr[i + j * MAP_SIZE] = 1.7 * (acc / 9.0).powf(1.2);
+                }
+            }
+        }
+        field
+    }
+
     fn half_screen(&self) -> Vector2 {
         let [w, h] = self.imgui_wrapper.imgui.io().display_size;
         Vector2::new(w / 2.0, h / 2.0)
@@ -538,14 +551,69 @@ impl MainState {
         }
 
         for full in &self.path_computer.full_paths {
+            fn draw_computed(
+                ui: &HighLevelUI,
+                half_screen: Vector2,
+                sprite: &mut AllSprite,
+                ctx: &mut Context,
+                computed: &Field<Option<Box<FlowField>>>,
+            ) {
+                if computed.arr.len() > 0 {
+                    let min = computed
+                        .arr
+                        .iter()
+                        .flatten()
+                        .map(|c| c.integration.arr.iter().min().unwrap().clone())
+                        .min()
+                        .unwrap();
+                    let max = computed
+                        .arr
+                        .iter()
+                        .flatten()
+                        .map(|c| {
+                            c.integration
+                                .arr
+                                .iter()
+                                .filter(|x| **x != flowfield::MAX_INTEGRATION)
+                                .max()
+                                .unwrap_or(&0)
+                                .clone()
+                        })
+                        .max()
+                        .unwrap_or(flowfield::MAX_INTEGRATION);
+
+                    for (index, c) in computed
+                        .arr
+                        .iter()
+                        .enumerate()
+                        .flat_map(|(index, c)| c.as_ref().map(|c| (index, c)))
+                    {
+                        let zone = Zone {
+                            zx: index % computed.width,
+                            zy: index / computed.width,
+                        };
+                        MainState::draw_flowfield(
+                            ui,
+                            half_screen,
+                            sprite,
+                            ctx,
+                            &zone,
+                            &c,
+                            min,
+                            max,
+                        );
+                    }
+                }
+            };
+
             match full {
                 FullPathCompute::ComputingFlowFields {
                     astar,
                     zone_to_visit,
-                    computing,
+                    computing_zone,
                     computed,
                 } => {
-                    let color_to_visit = [0.5, 0.1, 0.5, 1.0];
+                    let color_to_visit = [0.5, 0.1, 0.5, 0.5];
 
                     let mut draw_zone = |zone: &Zone, color: &[f64]| {
                         for i in zone.min_i()..=zone.max_i().min(self.map.size - 1) {
@@ -582,69 +650,39 @@ impl MainState {
                         draw_zone(zone, &color_to_visit);
                     }
 
-                    draw_zone(&computing.0, &[1.0, 0.0, 1.0, 1.0]);
+                    draw_zone(&computing_zone, &[1.0, 0.0, 1.0, 0.5]);
 
-                    MainState::draw_flowfield(
+                    draw_computed(
                         &self.imgui_wrapper.ui,
                         self.half_screen(),
                         &mut self.sprite,
                         ctx,
-                        &computing.0,
-                        &computing.1,
-                        computing.1.integration.arr.iter().min().unwrap().clone(),
-                        computing.1.integration.arr.iter().max().unwrap().clone(),
+                        computed,
                     );
 
-                    if computed.len() > 0 {
-                        let min = computed
-                            .iter()
-                            .map(|c| c.1.integration.arr.iter().min().unwrap().clone())
-                            .min()
-                            .unwrap();
-                        let max = computed
-                            .iter()
-                            .map(|c| c.1.integration.arr.iter().max().unwrap().clone())
-                            .max()
-                            .unwrap();
-
-                        for c in computed {
-                            MainState::draw_flowfield(
-                                &self.imgui_wrapper.ui,
-                                self.half_screen(),
-                                &mut self.sprite,
-                                ctx,
-                                &c.0,
-                                &c.1,
-                                min,
-                                max,
-                            );
-                        }
-                    }
+                    //                    let computing = &computed
+                    //                        .get(&computing_zone.large_cell_pos())
+                    //                        .as_ref()
+                    //                        .unwrap();
+                    //                    MainState::draw_flowfield(
+                    //                        &self.imgui_wrapper.ui,
+                    //                        self.half_screen(),
+                    //                        &mut self.sprite,
+                    //                        ctx,
+                    //                        &computing_zone,
+                    //                        &computing,
+                    //                        computing.integration.arr.iter().min().unwrap().clone(),
+                    //                        computing.integration.arr.iter().max().unwrap().clone(),
+                    //                    );
                 }
-                FullPathCompute::FlowFieldComputed(pathfinding::Result { flowfields }) => {
-                    let min = flowfields
-                        .iter()
-                        .map(|c| c.1.integration.arr.iter().min().unwrap().clone())
-                        .min()
-                        .unwrap();
-                    let max = flowfields
-                        .iter()
-                        .map(|c| c.1.integration.arr.iter().max().unwrap().clone())
-                        .max()
-                        .unwrap();
-
-                    for c in flowfields.iter().rev() {
-                        MainState::draw_flowfield(
-                            &self.imgui_wrapper.ui,
-                            self.half_screen(),
-                            &mut self.sprite,
-                            ctx,
-                            &c.0,
-                            &c.1,
-                            min,
-                            max,
-                        );
-                    }
+                FullPathCompute::FlowFieldComputed(pathfinding::Result { computed }) => {
+                    draw_computed(
+                        &self.imgui_wrapper.ui,
+                        self.half_screen(),
+                        &mut self.sprite,
+                        ctx,
+                        computed,
+                    );
                 }
                 _ => {}
             }
@@ -702,7 +740,7 @@ impl MainState {
                     (1.0 - f32::exp(-f32::powf(i, accel))) / 0.63
                 }
 
-                let v = self.map.cost.get(&(i, j).into()) as i32;
+                let v = *self.map.cost.get(&(i, j).into()) as i32;
                 let v = (v - min) as f32 / (max - min) as f32;
 
                 color_vec.push((color_of(v, 0.5) * 255.0) as u8);
@@ -765,13 +803,18 @@ impl MainState {
             for i in 0..GRID_SIZE {
                 let (i, j) = (i as f32, j as f32);
 
-                fn color_of(i: f32, accel: f32) -> f32 {
-                    (1.0 - f32::exp(-f32::powf(i, accel))) / 0.63
+                fn color_of(i: f64, accel: f64) -> f64 {
+                    (1.0 - f64::exp(-f64::powf(i, accel))) / 0.63
                 }
 
                 let v = { flowfield.integration.get(&(i, j).into()) };
 
-                let v = (v - min) as f32 / (max - min) as f32;
+                let v = (v - min) as f64 / (max - min) as f64;
+
+                let v = match v {
+                    x if x > 1.0 => 1.0,
+                    x => x * 0.8,
+                };
 
                 color_vec.push((color_of(v, 0.5) * 255.0) as u8);
                 color_vec.push((color_of(v, 1.1) * 255.0) as u8);
@@ -819,7 +862,7 @@ impl MainState {
                 for i in 0..GRID_SIZE {
                     let (i, j) = (i as f32, j as f32);
 
-                    let v = &flowfield.flow.get(&(i, j).into());
+                    let v = flowfield.flow.get(&(i, j).into());
                     let x = (v % 3) - 1;
                     let y = (v / 3) - 1;
 
