@@ -736,16 +736,16 @@ impl MainState {
             for i in 0..self.map.size {
                 let (i, j) = (i as f32, j as f32);
 
-                fn color_of(i: f32, accel: f32) -> f32 {
-                    (1.0 - f32::exp(-f32::powf(i, accel))) / 0.63
+                fn color_of(i: f64, accel: f64) -> f64 {
+                    (1.0 - f64::exp(-f64::powf(i, accel))) / 0.63
                 }
 
                 let v = *self.map.cost.get(&(i, j).into()) as i32;
-                let v = (v - min) as f32 / (max - min) as f32;
+                let v = (v - min) as f64 / (max - min) as f64;
 
-                color_vec.push((color_of(v, 0.5) * 255.0) as u8);
-                color_vec.push((color_of(v, 1.1) * 255.0) as u8);
                 color_vec.push((color_of(v, 2.0) * 255.0) as u8);
+                color_vec.push((color_of(v, 1.1) * 255.0) as u8);
+                color_vec.push((color_of(v, 0.5) * 255.0) as u8);
                 color_vec.push(255);
             }
         }
